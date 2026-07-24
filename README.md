@@ -49,7 +49,8 @@ learning-rate decay. Only the accelerator/runtime path is changed:
 
 - explicit `torch_npu` device calls instead of CUDA calls;
 - HCCL and `torchrun` instead of NCCL and the in-process GPU launcher;
-- Ascend AMP/GradScaler instead of CUDA AMP;
+- full FP32 training by default on Ascend because the official AMP path can
+  report gradient overflow; AMP remains available through the config;
 - CPU checkpoint loading followed by explicit optimizer-state migration.
 
 Install the PyTorch/torch_npu pair matching the server's CANN release, then:

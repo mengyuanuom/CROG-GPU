@@ -18,7 +18,7 @@ class OfficialCROGNPUConfigTest(unittest.TestCase):
             r"^\s*base_lr:\s*0\.0001\b",
             r"^\s*lr_multi:\s*0\.1\b",
             r"^\s*sync_bn:\s*True\s*$",
-            r"^\s*amp:\s*True\s*$",
+            r"^\s*amp:\s*False\b",
             r"^\s*pin_memory:\s*False\s*$",
             r"^\s*with_depth:\s*False\s*$",
             r"^\s*resume:\s*$",

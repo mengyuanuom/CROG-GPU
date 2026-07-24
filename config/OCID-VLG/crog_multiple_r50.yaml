@@ -15,7 +15,7 @@ TRAIN:
   fpn_in: [512, 1024, 1024]
   fpn_out: [256, 512, 1024]
   sync_bn: True
-  amp: True
+  amp: False  # Ascend AMP disabled: CROG gradients overflowed under loss scaling
   pin_memory: False
   # Decoder
   num_layers: 3
