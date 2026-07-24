@@ -1,6 +1,7 @@
 DATA:
   dataset: OCID-VLG
   root_path: ./datasets/OCID-VLG
+  with_depth: False
   train_split: train
   val_split: val
 TRAIN:

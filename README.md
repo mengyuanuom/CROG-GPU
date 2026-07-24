@@ -60,7 +60,9 @@ pip install -r requirements-npu.txt
 python tools/check_npu_env.py
 ```
 
-Place OCID-VLG at `datasets/OCID-VLG`. The training launcher automatically
+Place OCID-VLG at `datasets/OCID-VLG`. CROG is RGB-only, so the training
+dataset does not need a `depth/` directory and depth images are never loaded.
+The training launcher automatically
 downloads the official OpenAI CLIP RN50 checkpoint to `pretrain/RN50.pt` when
 it is absent and verifies its SHA-256 before training. Run the original CROG
 experiment on eight NPUs with:

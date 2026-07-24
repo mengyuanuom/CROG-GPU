@@ -181,11 +181,13 @@ def main_worker(local_rank, args):
                             input_size=args.input_size,
                             word_length=args.word_len,
                             split='train',
+                            with_depth=bool(getattr(args, "with_depth", False)),
                             version=args.version)
     val_data = OCIDVLGDataset(root_dir=args.root_path,
                             input_size=args.input_size,
                             word_length=args.word_len,
                             split='val',
+                            with_depth=bool(getattr(args, "with_depth", False)),
                             version=args.version)
         
 

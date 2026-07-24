@@ -20,6 +20,7 @@ class OfficialCROGNPUConfigTest(unittest.TestCase):
             r"^\s*sync_bn:\s*True\s*$",
             r"^\s*amp:\s*True\s*$",
             r"^\s*pin_memory:\s*False\s*$",
+            r"^\s*with_depth:\s*False\s*$",
             r"^\s*resume:\s*$",
             r"^\s*dist_backend:\s*['\"]hccl['\"]\s*$",
             r"^\s*dist_url:\s*env://\s*$",
@@ -49,6 +50,25 @@ class OfficialCROGNPUConfigTest(unittest.TestCase):
         digest = "afeb0e10f9e5a86da6080e35cf09123aca3b358a0c3e3b6c78a7b63bc04b6762"
         self.assertIn("https://openaipublic.azureedge.net/clip/models/", source)
         self.assertGreaterEqual(source.count(digest), 2)
+
+    def test_crog_dataloader_does_not_require_depth(self):
+        dataset_source = (ROOT / "utils" / "dataset.py").read_text(encoding="utf-8")
+        train_source = (ROOT / "train_crog.py").read_text(encoding="utf-8")
+        crog_dataset_source = dataset_source.split(
+            "class OCIDVLGDataset", 1
+        )[1].split("class OCIDGraspDataset", 1)[0]
+        self.assertRegex(crog_dataset_source, r"with_depth\s*=\s*False")
+        self.assertIn('if "depth" in batch[0]:', crog_dataset_source)
+        self.assertNotIn(
+            '"depth": torch.stack([torch.from_numpy(x["depth"]) for x in batch])',
+            crog_dataset_source,
+        )
+        self.assertEqual(
+            train_source.count(
+                'with_depth=bool(getattr(args, "with_depth", False))'
+            ),
+            2,
+        )
 
 
 if __name__ == "__main__":

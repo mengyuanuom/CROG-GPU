@@ -694,7 +694,7 @@ class OCIDVLGDataset(Dataset):
                  transform_grasp = GraspTransforms(),
                  input_size = 416,
                  word_length = 20,
-                 with_depth = True, 
+                 with_depth = False,
                  with_segm_mask = True,
                  with_grasp_masks = True,
                  version="multiple"
@@ -1040,9 +1040,8 @@ class OCIDVLGDataset(Dataset):
     
     @staticmethod
     def collate_fn(batch):
-        return {
+        collated = {
             "img": torch.stack([x["img"] for x in batch]),
-            "depth": torch.stack([torch.from_numpy(x["depth"]) for x in batch]),
             "mask": torch.stack([torch.from_numpy(x["mask"]).float() for x in batch]),
             "grasp_masks" : {
                 "qua": torch.stack([torch.from_numpy(x["grasp_masks"]["qua"]).float() for x in batch]),
@@ -1062,6 +1061,11 @@ class OCIDVLGDataset(Dataset):
             "ori_size": [x["ori_size"] for x in batch],
             "img_path": [x["img_path"] for x in batch]
         }
+        if "depth" in batch[0]:
+            collated["depth"] = torch.stack(
+                [torch.from_numpy(x["depth"]) for x in batch]
+            )
+        return collated
             
         
 
@@ -1414,4 +1418,3 @@ class OCIDGraspDataset(Dataset):
                 "wid": [torch.from_numpy(x["grasp_masks"]["wid"]).float() for x in batch]
             },
         }
-            
