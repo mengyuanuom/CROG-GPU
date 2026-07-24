@@ -11,7 +11,6 @@ NPROC_PER_NODE="${NPROC_PER_NODE:-8}"
 DATA_ROOT="${DATA_ROOT:-${REPO_ROOT}/datasets/OCID-VLG}"
 CLIP_WEIGHT="${CLIP_WEIGHT:-${REPO_ROOT}/pretrain/RN50.pt}"
 CONFIG="${CONFIG:-config/OCID-VLG/crog_multiple_r50.yaml}"
-AMP="${AMP:-True}"
 
 [[ -d "${DATA_ROOT}" ]] || {
   echo "OCID-VLG dataset directory not found: ${DATA_ROOT}" >&2
@@ -27,7 +26,6 @@ python3 tools/download_clip_rn50.py --output "${CLIP_WEIGHT}"
 
 echo "[launch] visible NPUs: ${ASCEND_RT_VISIBLE_DEVICES}"
 echo "[launch] torchrun processes on this node: ${NPROC_PER_NODE}"
-echo "[launch] AMP enabled: ${AMP}"
 
 torchrun \
   --standalone \
@@ -37,5 +35,4 @@ torchrun \
   --config "${CONFIG}" \
   --opts \
   DATA.root_path "${DATA_ROOT}" \
-  TRAIN.clip_pretrain "${CLIP_WEIGHT}" \
-  TRAIN.amp "${AMP}"
+  TRAIN.clip_pretrain "${CLIP_WEIGHT}"

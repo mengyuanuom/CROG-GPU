@@ -18,7 +18,7 @@ class OfficialCROGNPUConfigTest(unittest.TestCase):
             r"^\s*base_lr:\s*0\.0001\b",
             r"^\s*lr_multi:\s*0\.1\b",
             r"^\s*sync_bn:\s*True\s*$",
-            r"^\s*amp:\s*True\b",
+            r"^\s*amp:\s*False\b",
             r"^\s*pin_memory:\s*False\s*$",
             r"^\s*with_depth:\s*False\s*$",
             r"^\s*resume:\s*$",
@@ -70,12 +70,12 @@ class OfficialCROGNPUConfigTest(unittest.TestCase):
             2,
         )
 
-    def test_launcher_keeps_amp_off_as_an_explicit_control_only(self):
+    def test_launcher_reads_amp_only_from_yaml(self):
         source = (
             ROOT / "tools" / "train_crog_8npu.sh"
         ).read_text(encoding="utf-8")
-        self.assertIn('AMP="${AMP:-True}"', source)
-        self.assertIn('TRAIN.amp "${AMP}"', source)
+        self.assertNotIn('AMP=', source)
+        self.assertNotIn('TRAIN.amp', source)
 
     def test_launcher_and_worker_bind_all_eight_npus(self):
         launcher = (
@@ -97,7 +97,7 @@ class OfficialCROGNPUConfigTest(unittest.TestCase):
         ).read_text(encoding="utf-8")
         self.assertIn("class NoOpGradScaler:", runtime)
         self.assertIn("if not enabled:\n        return NoOpGradScaler()", runtime)
-        self.assertIn('echo "[launch] AMP enabled: ${AMP}"', launcher)
+        self.assertNotIn("TRAIN.amp", launcher)
 
 
 if __name__ == "__main__":
