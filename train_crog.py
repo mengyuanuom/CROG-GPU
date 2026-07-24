@@ -89,6 +89,11 @@ def main_worker(local_rank, args):
         world_size=args.world_size,
         rank=args.rank,
     )
+    print(
+        f"[HCCL] rank={args.rank}/{args.world_size} "
+        f"local_rank={args.local_rank} device={args.device}",
+        flush=True,
+    )
     args.manual_seed = init_random_seed(
         args.manual_seed,
         device=args.device,

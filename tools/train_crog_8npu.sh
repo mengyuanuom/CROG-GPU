@@ -25,6 +25,9 @@ AMP="${AMP:-True}"
 # before every run. A partial/invalid file never reaches model construction.
 python3 tools/download_clip_rn50.py --output "${CLIP_WEIGHT}"
 
+echo "[launch] visible NPUs: ${ASCEND_RT_VISIBLE_DEVICES}"
+echo "[launch] torchrun processes on this node: ${NPROC_PER_NODE}"
+
 torchrun \
   --standalone \
   --nnodes=1 \

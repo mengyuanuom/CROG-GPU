@@ -77,6 +77,19 @@ class OfficialCROGNPUConfigTest(unittest.TestCase):
         self.assertIn('AMP="${AMP:-True}"', source)
         self.assertIn('TRAIN.amp "${AMP}"', source)
 
+    def test_launcher_and_worker_bind_all_eight_npus(self):
+        launcher = (
+            ROOT / "tools" / "train_crog_8npu.sh"
+        ).read_text(encoding="utf-8")
+        trainer = (ROOT / "train_crog.py").read_text(encoding="utf-8")
+        self.assertIn("0,1,2,3,4,5,6,7", launcher)
+        self.assertIn('NPROC_PER_NODE="${NPROC_PER_NODE:-8}"', launcher)
+        self.assertIn('--nproc_per_node="${NPROC_PER_NODE}"', launcher)
+        self.assertIn('os.environ.get("LOCAL_RANK", 0)', trainer)
+        self.assertIn("set_device(local_rank)", trainer)
+        self.assertIn('backend="hccl"', trainer)
+        self.assertIn("DistributedDataParallel(", trainer)
+
 
 if __name__ == "__main__":
     unittest.main()
