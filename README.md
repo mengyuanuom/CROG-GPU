@@ -41,6 +41,39 @@ python -u train_ssg.py --config config/OCID-Grasp/ssg_r50.yaml
 
 **Please remember to modify the path to the dataset in config files.**
 
+## Ascend NPU port
+
+This branch keeps the official CROG model, losses, data augmentation, global
+batch size (24), Adam learning rate (`1e-4`), 50-epoch schedule, and epoch-35
+learning-rate decay. Only the accelerator/runtime path is changed:
+
+- explicit `torch_npu` device calls instead of CUDA calls;
+- HCCL and `torchrun` instead of NCCL and the in-process GPU launcher;
+- Ascend AMP/GradScaler instead of CUDA AMP;
+- CPU checkpoint loading followed by explicit optimizer-state migration.
+
+Install the PyTorch/torch_npu pair matching the server's CANN release, then:
+
+```bash
+source /usr/local/Ascend/ascend-toolkit/set_env.sh
+pip install -r requirements-npu.txt
+python tools/check_npu_env.py
+```
+
+Place OCID-VLG at `datasets/OCID-VLG` and the official CLIP RN50 weight at
+`pretrain/RN50.pt`. Run the original CROG experiment on eight NPUs with:
+
+```bash
+bash tools/train_crog_8npu.sh
+```
+
+Custom locations can be supplied without editing files:
+
+```bash
+DATA_ROOT=/data/OCID-VLG CLIP_WEIGHT=/data/RN50.pt \
+  bash tools/train_crog_8npu.sh
+```
+
 
 ## License
 

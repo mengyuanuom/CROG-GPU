@@ -5,13 +5,12 @@ from tqdm import tqdm
 import cv2
 import numpy as np
 import torch
-import torch.cuda.amp as amp
 import torch.distributed as dist
 import torch.nn.functional as F
-import wandb
 from loguru import logger
 from utils.dataset import tokenize
 from utils.misc import (AverageMeter, ProgressMeter, concat_all_gather, trainMetricGPU, get_seg_image)
+from utils.npu import autocast
 from utils.grasp_eval import (detect_grasps, calculate_iou, calculate_max_iou, calculate_jacquard_index, visualization)
 
 def train_with_grasp(train_loader, model, optimizer, scheduler, scaler, epoch, args):
@@ -57,19 +56,19 @@ def train_with_grasp(train_loader, model, optimizer, scheduler, scaler, epoch, a
         
         data_time.update(time.time() - end)
         # data
-        image = image.cuda(non_blocking=True)
-        text = text.cuda(non_blocking=True)
-        ins_mask = ins_mask.cuda(non_blocking=True).unsqueeze(1)
-        grasp_qua_mask = grasp_qua_mask.cuda(non_blocking=True).unsqueeze(1)
-        grasp_sin_mask = grasp_sin_mask.cuda(non_blocking=True).unsqueeze(1)
-        grasp_cos_mask = grasp_cos_mask.cuda(non_blocking=True).unsqueeze(1)
-        grasp_wid_mask = grasp_wid_mask.cuda(non_blocking=True).unsqueeze(1)
+        image = image.to(args.device, non_blocking=True)
+        text = text.to(args.device, non_blocking=True)
+        ins_mask = ins_mask.to(args.device, non_blocking=True).unsqueeze(1)
+        grasp_qua_mask = grasp_qua_mask.to(args.device, non_blocking=True).unsqueeze(1)
+        grasp_sin_mask = grasp_sin_mask.to(args.device, non_blocking=True).unsqueeze(1)
+        grasp_cos_mask = grasp_cos_mask.to(args.device, non_blocking=True).unsqueeze(1)
+        grasp_wid_mask = grasp_wid_mask.to(args.device, non_blocking=True).unsqueeze(1)
 
         # # multi-scale training
         # image = F.interpolate(image, size=(new_size, new_size), mode='bilinear')
 
         # forward
-        with amp.autocast():
+        with autocast(enabled=bool(getattr(args, "amp", True))):
             pred, target, loss, loss_dict = model(image, text, ins_mask, grasp_qua_mask, grasp_sin_mask, grasp_cos_mask, grasp_wid_mask)
         
         ins_mask_pred = pred[0]
@@ -79,6 +78,7 @@ def train_with_grasp(train_loader, model, optimizer, scheduler, scaler, epoch, a
         optimizer.zero_grad()
         scaler.scale(loss).backward()
         if args.max_norm:
+            scaler.unscale_(optimizer)
             torch.nn.utils.clip_grad_norm_(model.parameters(), args.max_norm)
         scaler.step(optimizer)
         scaler.update()
@@ -140,7 +140,7 @@ def validate_with_grasp(val_loader, model, epoch, args):
     num_correct_grasps = [0, 0]
     num_total_grasps = [0, 0]
 
-    pbar = tqdm(val_loader)
+    pbar = tqdm(val_loader, disable=dist.get_rank() != 0)
     for data in pbar:
         # data
         image = data["img"]
@@ -154,13 +154,13 @@ def validate_with_grasp(val_loader, model, epoch, args):
         ori_sizes = data["ori_size"]
         grasp_targets = data["grasps"]
         
-        image = image.cuda(non_blocking=True)
-        text = text.cuda(non_blocking=True)
-        ins_mask = ins_mask.cuda(non_blocking=True).unsqueeze(1)
-        grasp_qua_mask = grasp_qua_mask.cuda(non_blocking=True).unsqueeze(1)
-        grasp_sin_mask = grasp_sin_mask.cuda(non_blocking=True).unsqueeze(1)
-        grasp_cos_mask = grasp_cos_mask.cuda(non_blocking=True).unsqueeze(1)
-        grasp_wid_mask = grasp_wid_mask.cuda(non_blocking=True).unsqueeze(1)
+        image = image.to(args.device, non_blocking=True)
+        text = text.to(args.device, non_blocking=True)
+        ins_mask = ins_mask.to(args.device, non_blocking=True).unsqueeze(1)
+        grasp_qua_mask = grasp_qua_mask.to(args.device, non_blocking=True).unsqueeze(1)
+        grasp_sin_mask = grasp_sin_mask.to(args.device, non_blocking=True).unsqueeze(1)
+        grasp_cos_mask = grasp_cos_mask.to(args.device, non_blocking=True).unsqueeze(1)
+        grasp_wid_mask = grasp_wid_mask.to(args.device, non_blocking=True).unsqueeze(1)
         
         # inference & get predictions from model
         pred, target = model(image, text, ins_mask, grasp_qua_mask, grasp_sin_mask, grasp_cos_mask, grasp_wid_mask)
@@ -260,9 +260,15 @@ def validate_with_grasp(val_loader, model, epoch, args):
                 num_correct_grasps[i] += j_index
                 num_total_grasps[i] += 1
     
-    J_index = [0, 0]
-    for i in range(len(num_grasps)):
-        J_index[i] = num_correct_grasps[i]/num_total_grasps[i]
+    correct = torch.tensor(
+        num_correct_grasps, dtype=torch.float32, device=image.device
+    )
+    total = torch.tensor(
+        num_total_grasps, dtype=torch.float32, device=image.device
+    )
+    dist.all_reduce(correct)
+    dist.all_reduce(total)
+    J_index = (correct / total.clamp_min(1)).cpu().tolist()
             
     iou_list = np.stack(iou_list)
     iou_list = torch.from_numpy(iou_list).to(image.device)
@@ -303,7 +309,7 @@ def validate_without_grasp(val_loader, model, epoch, args):
     num_correct_grasps = [0, 0]
     num_total_grasps = [0, 0]
 
-    pbar = tqdm(val_loader)
+    pbar = tqdm(val_loader, disable=dist.get_rank() != 0)
     for data in pbar:
         # data
         image = data["img"]
@@ -317,13 +323,13 @@ def validate_without_grasp(val_loader, model, epoch, args):
         ori_sizes = data["ori_size"]
         grasp_targets = data["grasps"]
         
-        image = image.cuda(non_blocking=True)
-        text = text.cuda(non_blocking=True)
-        ins_mask = ins_mask.cuda(non_blocking=True).unsqueeze(1)
-        grasp_qua_mask = grasp_qua_mask.cuda(non_blocking=True).unsqueeze(1)
-        grasp_sin_mask = grasp_sin_mask.cuda(non_blocking=True).unsqueeze(1)
-        grasp_cos_mask = grasp_cos_mask.cuda(non_blocking=True).unsqueeze(1)
-        grasp_wid_mask = grasp_wid_mask.cuda(non_blocking=True).unsqueeze(1)
+        image = image.to(args.device, non_blocking=True)
+        text = text.to(args.device, non_blocking=True)
+        ins_mask = ins_mask.to(args.device, non_blocking=True).unsqueeze(1)
+        grasp_qua_mask = grasp_qua_mask.to(args.device, non_blocking=True).unsqueeze(1)
+        grasp_sin_mask = grasp_sin_mask.to(args.device, non_blocking=True).unsqueeze(1)
+        grasp_cos_mask = grasp_cos_mask.to(args.device, non_blocking=True).unsqueeze(1)
+        grasp_wid_mask = grasp_wid_mask.to(args.device, non_blocking=True).unsqueeze(1)
         
         # inference & get predictions from model
         pred, ins_mask_targets = model(image, text, ins_mask, grasp_qua_mask, grasp_sin_mask, grasp_cos_mask, grasp_wid_mask)
@@ -417,13 +423,13 @@ def inference_with_grasp(test_loader, model, args):
         sentences = data["sentence"]
         img_paths = data["img_path"]
         
-        image = image.cuda(non_blocking=True)
-        text = text.cuda(non_blocking=True)
-        ins_mask = ins_mask.cuda(non_blocking=True).unsqueeze(1)
-        grasp_qua_mask = grasp_qua_mask.cuda(non_blocking=True).unsqueeze(1)
-        grasp_sin_mask = grasp_sin_mask.cuda(non_blocking=True).unsqueeze(1)
-        grasp_cos_mask = grasp_cos_mask.cuda(non_blocking=True).unsqueeze(1)
-        grasp_wid_mask = grasp_wid_mask.cuda(non_blocking=True).unsqueeze(1)
+        image = image.to(args.device, non_blocking=True)
+        text = text.to(args.device, non_blocking=True)
+        ins_mask = ins_mask.to(args.device, non_blocking=True).unsqueeze(1)
+        grasp_qua_mask = grasp_qua_mask.to(args.device, non_blocking=True).unsqueeze(1)
+        grasp_sin_mask = grasp_sin_mask.to(args.device, non_blocking=True).unsqueeze(1)
+        grasp_cos_mask = grasp_cos_mask.to(args.device, non_blocking=True).unsqueeze(1)
+        grasp_wid_mask = grasp_wid_mask.to(args.device, non_blocking=True).unsqueeze(1)
         
         # inference & get predictions from model
         pred, target = model(image, text, ins_mask, grasp_qua_mask, grasp_sin_mask, grasp_cos_mask, grasp_wid_mask)
@@ -556,5 +562,3 @@ def inference_with_grasp(test_loader, model, args):
     logger.info("J@1: {:.2f}, J@5: {:.2f}".format(100. * J_index[0], 100. * J_index[1]))
 
     return iou.item(), prec, J_index
-
-      

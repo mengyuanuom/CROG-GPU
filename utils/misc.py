@@ -10,9 +10,10 @@ import cv2
 import torch
 from torch import nn
 import torch.distributed as dist
+from utils.npu import seed_all
 
 
-def init_random_seed(seed=None, device='cuda', rank=0, world_size=1):
+def init_random_seed(seed=None, device='npu:0', rank=0, world_size=1):
     """Initialize random seed."""
     if seed is not None:
         return seed
@@ -36,11 +37,12 @@ def set_random_seed(seed, deterministic=False):
     """Set random seed."""
     random.seed(seed)
     np.random.seed(seed)
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
+    seed_all(seed)
     if deterministic:
-        torch.backends.cudnn.deterministic = True
-        torch.backends.cudnn.benchmark = False
+        logger.warning(
+            "NPU determinism depends on the installed CANN/torch_npu operator "
+            "implementations; all available random generators were seeded."
+        )
 
 
 @torch.no_grad()

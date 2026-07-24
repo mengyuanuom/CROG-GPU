@@ -5,7 +5,7 @@ DATA:
   val_split: val
 TRAIN:
   # Base Arch
-  clip_pretrain: exp/pretrain_clip/RN50.pt
+  clip_pretrain: pretrain/RN50.pt
   version: multiple
   input_size: 416
   word_len: 17
@@ -14,6 +14,8 @@ TRAIN:
   fpn_in: [512, 1024, 1024]
   fpn_out: [256, 512, 1024]
   sync_bn: True
+  amp: True
+  pin_memory: False
   # Decoder
   num_layers: 3
   num_head: 8
@@ -26,8 +28,8 @@ TRAIN:
   epochs: 50
   milestones: [35]
   start_epoch: 0
-  batch_size: 24  # batch size for training
-  batch_size_val: 24  # batch size for validation during training, memory and speed tradeoff
+  batch_size: 24  # official global batch size; 3 samples per process on 8 NPUs
+  batch_size_val: 24  # official global validation batch size
   base_lr: 0.0001
   lr_decay: 0.1
   lr_multi: 0.1
@@ -36,19 +38,19 @@ TRAIN:
   manual_seed: 0
   print_freq: 100
   # Resume & Save
-  exp_name: CROG_multiple_R50
-  output_folder: exp/OCID-VLG_multiple
+  exp_name: CROG_official_multiple_R50_8npu
+  output_folder: exp/OCID-VLG_multiple_npu
   save_freq: 1
   weight:  # path to initial weight (default: none)
-  resume:  weights/best_jindex_model.pth
+  resume:
   evaluate: True  # evaluate on validation set, extra gpu memory needed and small batch_size_val is recommend
   # Ablation study
   use_contrastive: True
   use_pretrained_clip: True
   use_grasp_masks: True
 Distributed:
-  dist_url: tcp://localhost:3681
-  dist_backend: 'nccl'
+  dist_url: env://
+  dist_backend: 'hccl'
   multiprocessing_distributed: True
   world_size: 1
   rank: 0

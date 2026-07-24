@@ -6,17 +6,12 @@ import sys
 import time
 import warnings
 from functools import partial
-from collections import OrderedDict
 
 os.environ["WANDB_MODE"] = "offline"
-os.environ["WANDB_API_KEY"] = '99ee90fdefff711f21b8b40a0fac1bdb95da2aa5'
-
 
 import cv2
 import torch
-import torch.cuda.amp as amp
 import torch.distributed as dist
-import torch.multiprocessing as mp
 import torch.nn as nn
 import torch.nn.parallel
 import torch.optim
@@ -25,12 +20,12 @@ from loguru import logger
 from torch.optim.lr_scheduler import MultiStepLR
 
 import utils.config as config
-import wandb
 from utils.dataset import OCIDVLGDataset
 from engine.crog_engine import train_with_grasp, validate_with_grasp, validate_without_grasp
 from model import build_crog
 from utils.misc import (init_random_seed, set_random_seed, setup_logger,
                         worker_init_fn)
+from utils.npu import build_grad_scaler, device_count, empty_cache, set_device
 
 warnings.filterwarnings("ignore")
 cv2.setNumThreads(0)
@@ -56,47 +51,51 @@ def get_parser():
     return cfg
 
 
-@logger.catch
+@logger.catch(reraise=True)
 def main():
-    torch.multiprocessing.set_start_method('spawn')
-    
     args = get_parser()
-    args.manual_seed = init_random_seed(args.manual_seed)
-    set_random_seed(args.manual_seed, deterministic=False)
-
-    args.ngpus_per_node = torch.cuda.device_count()
-    args.world_size = args.ngpus_per_node * args.world_size
-    # mp.spawn(main_worker, nprocs=args.ngpus_per_node, args=(args, ), join=True)
-    
-    children = []
-    for i in range(args.world_size):
-        subproc = mp.Process(target=main_worker, args=(i, args))
-        children.append(subproc)
-        subproc.start()
-
-    for i in range(args.world_size):
-        children[i].join()
+    args.local_rank = int(os.environ.get("LOCAL_RANK", 0))
+    args.rank = int(os.environ.get("RANK", 0))
+    args.world_size = int(os.environ.get("WORLD_SIZE", 1))
+    args.npus_per_node = int(os.environ.get("LOCAL_WORLD_SIZE", args.world_size))
+    if args.npus_per_node > device_count():
+        raise RuntimeError(
+            f"torchrun requested {args.npus_per_node} processes, but only "
+            f"{device_count()} visible NPUs were found."
+        )
+    main_worker(args.local_rank, args)
 
 
-def main_worker(gpu, args):
+def main_worker(local_rank, args):
     args.output_dir = os.path.join(args.output_folder, args.exp_name)
+    os.makedirs(args.output_dir, exist_ok=True)
 
     # local rank & global rank
-    args.gpu = gpu
-    args.rank = args.rank * args.ngpus_per_node + gpu
-    torch.cuda.set_device(args.gpu)
+    args.npu = local_rank
+    args.device = set_device(local_rank)
 
     # logger
     setup_logger(args.output_dir,
-                 distributed_rank=args.gpu,
+                 distributed_rank=args.rank,
                  filename="train.log",
                  mode="a")
 
     # dist init
-    dist.init_process_group(backend=args.dist_backend,
-                            init_method=args.dist_url,
-                            world_size=args.world_size,
-                            rank=args.rank)
+    os.environ.setdefault("MASTER_ADDR", "127.0.0.1")
+    os.environ.setdefault("MASTER_PORT", "29500")
+    dist.init_process_group(
+        backend="hccl",
+        init_method="env://",
+        world_size=args.world_size,
+        rank=args.rank,
+    )
+    args.manual_seed = init_random_seed(
+        args.manual_seed,
+        device=args.device,
+        rank=args.rank,
+        world_size=args.world_size,
+    )
+    set_random_seed(args.manual_seed, deterministic=False)
 
     # wandb
     # if args.rank == 0:
@@ -122,7 +121,7 @@ def main_worker(gpu, args):
     scheduler = MultiStepLR(optimizer,
                             milestones=args.milestones,
                             gamma=args.lr_decay)
-    scaler = amp.GradScaler()
+    scaler = build_grad_scaler(enabled=bool(getattr(args, "amp", True)))
     
     # # resume
     # best_IoU = 0.0
@@ -151,15 +150,31 @@ def main_worker(gpu, args):
     
     
     
-    model = nn.parallel.DistributedDataParallel(model.cuda(),
-                                                device_ids=[args.gpu],
-                                                find_unused_parameters=True)
+    model = model.to(args.device)
+    model = nn.parallel.DistributedDataParallel(
+        model,
+        device_ids=[args.npu],
+        output_device=args.npu,
+        find_unused_parameters=True,
+    )
 
     # build dataset
-    args.batch_size = int(args.batch_size / args.ngpus_per_node)
-    args.batch_size_val = int(args.batch_size_val / args.ngpus_per_node)
+    if args.batch_size % args.world_size:
+        raise ValueError(
+            f"Official global train batch size {args.batch_size} must be divisible "
+            f"by world size {args.world_size}."
+        )
+    if args.batch_size_val % args.world_size:
+        raise ValueError(
+            f"Official global validation batch size {args.batch_size_val} must be "
+            f"divisible by world size {args.world_size}."
+        )
+    args.global_batch_size = args.batch_size
+    args.global_batch_size_val = args.batch_size_val
+    args.batch_size = int(args.batch_size / args.world_size)
+    args.batch_size_val = int(args.batch_size_val / args.world_size)
     args.workers = int(
-        (args.workers + args.ngpus_per_node - 1) / args.ngpus_per_node)
+        (args.workers + args.world_size - 1) / args.world_size)
 
         
     train_data = OCIDVLGDataset(root_dir=args.root_path,
@@ -186,7 +201,7 @@ def main_worker(gpu, args):
                                    batch_size=args.batch_size,
                                    shuffle=False,
                                    num_workers=args.workers,
-                                   pin_memory=True,
+                                   pin_memory=bool(getattr(args, "pin_memory", False)),
                                    worker_init_fn=init_fn,
                                    sampler=train_sampler,
                                    drop_last=True,
@@ -195,7 +210,7 @@ def main_worker(gpu, args):
                                  batch_size=args.batch_size_val,
                                  shuffle=False,
                                  num_workers=args.workers_val,
-                                 pin_memory=True,
+                                 pin_memory=bool(getattr(args, "pin_memory", False)),
                                  sampler=val_sampler,
                                  drop_last=False,
                                  collate_fn=OCIDVLGDataset.collate_fn)
@@ -206,20 +221,22 @@ def main_worker(gpu, args):
     if args.resume:
         if os.path.isfile(args.resume):
             logger.info("=> loading checkpoint '{}'".format(args.resume))
-            map_location = {'cuda:%d' % 0: 'cuda:%d' % gpu}
-            checkpoint = torch.load(
-                args.resume, map_location=map_location)
+            checkpoint = torch.load(args.resume, map_location="cpu")
             args.start_epoch = checkpoint['epoch']
             best_IoU = checkpoint["best_iou"]
             best_j_index = checkpoint["best_j_index"]
             model.load_state_dict(checkpoint['state_dict'])
             optimizer.load_state_dict(checkpoint['optimizer'])
+            for state in optimizer.state.values():
+                for key, value in state.items():
+                    if torch.is_tensor(value):
+                        state[key] = value.to(args.device)
             scheduler.load_state_dict(checkpoint['scheduler'])
             logger.info("=> loaded checkpoint '{}' (epoch {})".format(
                 args.resume, checkpoint['epoch']))
             
             del checkpoint
-            torch.cuda.empty_cache()
+            empty_cache()
         else:
             raise ValueError(
                 "=> resume failed! no checkpoint found at '{}'. Please check args.resume again!"
@@ -241,9 +258,19 @@ def main_worker(gpu, args):
         else:
             iou, prec_dict, j_index = validate_without_grasp(val_loader, model, epoch_log, args)
 
+        # Keep the checkpoint scheduler state aligned with the next epoch.
+        # This is the same uninterrupted training schedule as upstream.
+        scheduler.step(epoch_log)
+
         # save model
         if dist.get_rank() == 0:
             lastname = os.path.join(args.output_dir, "last_model.pth")
+            improved_iou = iou >= best_IoU
+            improved_j = j_index[0] >= best_j_index
+            if improved_iou:
+                best_IoU = iou
+            if improved_j:
+                best_j_index = j_index[0]
             torch.save(
                 {
                     'epoch': epoch_log,
@@ -256,19 +283,15 @@ def main_worker(gpu, args):
                     'optimizer': optimizer.state_dict(),
                     'scheduler': scheduler.state_dict()
                 }, lastname)
-            if iou >= best_IoU:
-                best_IoU = iou
+            if improved_iou:
                 bestname = os.path.join(args.output_dir, "best_iou_model.pth")
                 shutil.copyfile(lastname, bestname)
             
-            if j_index[0] >= best_j_index:
-                best_j_index = j_index[0]
+            if improved_j:
                 bestname = os.path.join(args.output_dir, "best_jindex_model.pth")
                 shutil.copyfile(lastname, bestname)
 
-        # update lr
-        scheduler.step(epoch_log)
-        torch.cuda.empty_cache()
+        empty_cache()
 
     time.sleep(2)
     # if dist.get_rank() == 0:
@@ -278,6 +301,7 @@ def main_worker(gpu, args):
     total_time = time.time() - start_time
     total_time_str = str(datetime.timedelta(seconds=int(total_time)))
     logger.info('* Training time {} *'.format(total_time_str))
+    dist.destroy_process_group()
 
 
 if __name__ == '__main__':
