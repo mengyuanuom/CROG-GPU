@@ -80,6 +80,10 @@ only changed training option is AMP:
 AMP=False bash tools/train_crog_8npu.sh
 ```
 
+The FP32 path bypasses both autocast and `torch_npu.npu.amp.GradScaler`; it
+uses ordinary `loss.backward()` and `optimizer.step()` so a disabled scaler
+cannot still enter an Ascend overflow-status check.
+
 The weight can also be downloaded separately:
 
 ```bash

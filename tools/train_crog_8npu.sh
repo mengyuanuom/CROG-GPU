@@ -27,6 +27,7 @@ python3 tools/download_clip_rn50.py --output "${CLIP_WEIGHT}"
 
 echo "[launch] visible NPUs: ${ASCEND_RT_VISIBLE_DEVICES}"
 echo "[launch] torchrun processes on this node: ${NPROC_PER_NODE}"
+echo "[launch] AMP enabled: ${AMP}"
 
 torchrun \
   --standalone \

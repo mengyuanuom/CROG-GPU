@@ -126,7 +126,14 @@ def main_worker(local_rank, args):
     scheduler = MultiStepLR(optimizer,
                             milestones=args.milestones,
                             gamma=args.lr_decay)
-    scaler = build_grad_scaler(enabled=bool(getattr(args, "amp", True)))
+    amp_enabled = bool(getattr(args, "amp", True))
+    scaler = build_grad_scaler(enabled=amp_enabled)
+    if args.rank == 0:
+        logger.info(
+            "Precision path: amp={}, scaler={}",
+            amp_enabled,
+            type(scaler).__name__,
+        )
     
     # # resume
     # best_IoU = 0.0

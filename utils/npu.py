@@ -55,8 +55,32 @@ def autocast(enabled: bool = True):
     return get_torch_npu().npu.amp.autocast(enabled=True)
 
 
+class NoOpGradScaler:
+    """FP32 optimizer path that never enters torch_npu AMP overflow checks."""
+
+    enabled = False
+
+    @staticmethod
+    def scale(loss):
+        return loss
+
+    @staticmethod
+    def unscale_(optimizer):
+        return None
+
+    @staticmethod
+    def step(optimizer):
+        return optimizer.step()
+
+    @staticmethod
+    def update():
+        return None
+
+
 def build_grad_scaler(enabled: bool = True):
-    return get_torch_npu().npu.amp.GradScaler(enabled=bool(enabled))
+    if not enabled:
+        return NoOpGradScaler()
+    return get_torch_npu().npu.amp.GradScaler(enabled=True)
 
 
 def empty_cache() -> None:

@@ -90,6 +90,15 @@ class OfficialCROGNPUConfigTest(unittest.TestCase):
         self.assertIn('backend="hccl"', trainer)
         self.assertIn("DistributedDataParallel(", trainer)
 
+    def test_fp32_path_does_not_construct_an_npu_grad_scaler(self):
+        runtime = (ROOT / "utils" / "npu.py").read_text(encoding="utf-8")
+        launcher = (
+            ROOT / "tools" / "train_crog_8npu.sh"
+        ).read_text(encoding="utf-8")
+        self.assertIn("class NoOpGradScaler:", runtime)
+        self.assertIn("if not enabled:\n        return NoOpGradScaler()", runtime)
+        self.assertIn('echo "[launch] AMP enabled: ${AMP}"', launcher)
+
 
 if __name__ == "__main__":
     unittest.main()
