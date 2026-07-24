@@ -49,8 +49,8 @@ learning-rate decay. Only the accelerator/runtime path is changed:
 
 - explicit `torch_npu` device calls instead of CUDA calls;
 - HCCL and `torchrun` instead of NCCL and the in-process GPU launcher;
-- full FP32 training by default on Ascend because the official AMP path can
-  report gradient overflow; AMP remains available through the config;
+- Ascend AMP/GradScaler instead of CUDA AMP; an explicit FP32 control run is
+  available without changing the official default;
 - CPU checkpoint loading followed by explicit optimizer-state migration.
 
 Install the PyTorch/torch_npu pair matching the server's CANN release, then:
@@ -70,6 +70,14 @@ experiment on eight NPUs with:
 
 ```bash
 bash tools/train_crog_8npu.sh
+```
+
+This default keeps the official AMP setting. If it terminates because of an
+Ascend gradient overflow, run a separately labelled FP32 control in which the
+only changed training option is AMP:
+
+```bash
+AMP=False bash tools/train_crog_8npu.sh
 ```
 
 The weight can also be downloaded separately:

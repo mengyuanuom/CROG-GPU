@@ -11,6 +11,7 @@ NPROC_PER_NODE="${NPROC_PER_NODE:-8}"
 DATA_ROOT="${DATA_ROOT:-${REPO_ROOT}/datasets/OCID-VLG}"
 CLIP_WEIGHT="${CLIP_WEIGHT:-${REPO_ROOT}/pretrain/RN50.pt}"
 CONFIG="${CONFIG:-config/OCID-VLG/crog_multiple_r50.yaml}"
+AMP="${AMP:-True}"
 
 [[ -d "${DATA_ROOT}" ]] || {
   echo "OCID-VLG dataset directory not found: ${DATA_ROOT}" >&2
@@ -32,4 +33,5 @@ torchrun \
   --config "${CONFIG}" \
   --opts \
   DATA.root_path "${DATA_ROOT}" \
-  TRAIN.clip_pretrain "${CLIP_WEIGHT}"
+  TRAIN.clip_pretrain "${CLIP_WEIGHT}" \
+  TRAIN.amp "${AMP}"
