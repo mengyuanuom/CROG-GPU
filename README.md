@@ -60,12 +60,23 @@ pip install -r requirements-npu.txt
 python tools/check_npu_env.py
 ```
 
-Place OCID-VLG at `datasets/OCID-VLG` and the official CLIP RN50 weight at
-`pretrain/RN50.pt`. Run the original CROG experiment on eight NPUs with:
+Place OCID-VLG at `datasets/OCID-VLG`. The training launcher automatically
+downloads the official OpenAI CLIP RN50 checkpoint to `pretrain/RN50.pt` when
+it is absent and verifies its SHA-256 before training. Run the original CROG
+experiment on eight NPUs with:
 
 ```bash
 bash tools/train_crog_8npu.sh
 ```
+
+The weight can also be downloaded separately:
+
+```bash
+python tools/download_clip_rn50.py
+```
+
+Official direct URL:
+<https://openaipublic.azureedge.net/clip/models/afeb0e10f9e5a86da6080e35cf09123aca3b358a0c3e3b6c78a7b63bc04b6762/RN50.pt>
 
 Custom locations can be supplied without editing files:
 

@@ -42,6 +42,14 @@ class OfficialCROGNPUConfigTest(unittest.TestCase):
                 for token in forbidden:
                     self.assertNotIn(token, source)
 
+    def test_clip_download_uses_the_official_hashed_url(self):
+        source = (
+            ROOT / "tools" / "download_clip_rn50.py"
+        ).read_text(encoding="utf-8")
+        digest = "afeb0e10f9e5a86da6080e35cf09123aca3b358a0c3e3b6c78a7b63bc04b6762"
+        self.assertIn("https://openaipublic.azureedge.net/clip/models/", source)
+        self.assertGreaterEqual(source.count(digest), 2)
+
 
 if __name__ == "__main__":
     unittest.main()

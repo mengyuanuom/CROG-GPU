@@ -20,10 +20,9 @@ CONFIG="${CONFIG:-config/OCID-VLG/crog_multiple_r50.yaml}"
   echo "OCID-VLG multiple-split training expressions not found under: ${DATA_ROOT}" >&2
   exit 2
 }
-[[ -f "${CLIP_WEIGHT}" ]] || {
-  echo "CLIP RN50 weight not found: ${CLIP_WEIGHT}" >&2
-  exit 2
-}
+# Download the official OpenAI checkpoint when absent and verify its SHA-256
+# before every run. A partial/invalid file never reaches model construction.
+python3 tools/download_clip_rn50.py --output "${CLIP_WEIGHT}"
 
 torchrun \
   --standalone \
