@@ -129,6 +129,11 @@ def _check_and_coerce_cfg_value_type(replacement, original, key, full_key):
     if replacement_type == original_type:
         return replacement
 
+    # Empty YAML fields such as ``resume:`` are optional placeholders and
+    # must accept a concrete value supplied through ``--opts``.
+    if original is None:
+        return replacement
+
     # Cast replacement from from_type to to_type if the replacement and original
     # types match from_type and to_type
     def conditional_cast(from_type, to_type):

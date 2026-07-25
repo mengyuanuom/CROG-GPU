@@ -1,12 +1,19 @@
 from pathlib import Path
 import re
 import unittest
+from utils.config import CfgNode, merge_cfg_from_list
 
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
 class OfficialCROGNPUConfigTest(unittest.TestCase):
+    def test_none_config_placeholder_accepts_checkpoint_path(self):
+        checkpoint_path = "exp/run/best_jindex_model.pth"
+        cfg = CfgNode({"resume": None})
+        merged = merge_cfg_from_list(cfg, ["TRAIN.resume", checkpoint_path])
+        self.assertEqual(merged.resume, checkpoint_path)
+
     def test_official_training_hyperparameters_are_preserved(self):
         path = ROOT / "config" / "OCID-VLG" / "crog_multiple_r50.yaml"
         source = path.read_text(encoding="utf-8")
