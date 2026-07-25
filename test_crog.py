@@ -4,6 +4,7 @@ import warnings
 
 import cv2
 import torch
+import torch.distributed as dist
 import torch.utils.data
 from loguru import logger
 
@@ -41,15 +42,26 @@ def get_parser():
 def main():
     args = get_parser()
     args.npu = int(os.environ.get("LOCAL_RANK", 0))
+    args.rank = int(os.environ.get("RANK", 0))
+    args.world_size = int(os.environ.get("WORLD_SIZE", 1))
+    args.distributed = args.world_size > 1
     args.device = set_device(args.npu)
+    if args.distributed:
+        dist.init_process_group(
+            backend="hccl",
+            init_method="env://",
+            rank=args.rank,
+            world_size=args.world_size,
+        )
     args.output_dir = os.path.join(args.output_folder, args.exp_name)
+    os.makedirs(args.output_dir, exist_ok=True)
     if args.visualize:
         args.vis_dir = os.path.join(args.output_dir, "vis")
         os.makedirs(args.vis_dir, exist_ok=True)
 
     # logger
     setup_logger(args.output_dir,
-                 distributed_rank=0,
+                 distributed_rank=args.rank,
                  filename="test.log",
                  mode="a")
     logger.info(args)
@@ -66,12 +78,17 @@ def main():
             f"Unsupported OCID-VLG test split: {test_split!r}. "
             "Choose train, val, or test."
         )
-    test_data = OCIDVLGDataset(root_dir=args.root_path,
+    full_test_data = OCIDVLGDataset(root_dir=args.root_path,
                             input_size=args.input_size,
                             word_length=args.word_len,
                             split=test_split,
                             with_depth=bool(getattr(args, "with_depth", False)),
                             version=args.version)
+    if args.distributed:
+        indices = range(args.rank, len(full_test_data), args.world_size)
+        test_data = torch.utils.data.Subset(full_test_data, indices)
+    else:
+        test_data = full_test_data
     test_loader = torch.utils.data.DataLoader(test_data,
                                               batch_size=1,
                                               shuffle=False,
@@ -105,7 +122,11 @@ def main():
             .format(args.resume))
 
     # inference
-    inference_with_grasp(test_loader, model, args)
+    try:
+        inference_with_grasp(test_loader, model, args)
+    finally:
+        if args.distributed and dist.is_initialized():
+            dist.destroy_process_group()
 
 
 if __name__ == '__main__':

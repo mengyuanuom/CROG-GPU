@@ -396,9 +396,11 @@ def inference_with_grasp(test_loader, model, args):
                                     borderValue=0.)
         return inv_img
 
-    iou_list = []
-    num_correct_grasps = 0
-    num_total_grasps = 0
+    rank = dist.get_rank() if dist.is_available() and dist.is_initialized() else 0
+    thresholds = (0.5, 0.6, 0.7, 0.8, 0.9)
+    iou_sum = 0.0
+    sample_count = 0
+    precision_counts = [0, 0, 0, 0, 0]
     model.eval()
     time.sleep(2)
     
@@ -406,7 +408,12 @@ def inference_with_grasp(test_loader, model, args):
     num_correct_grasps = [0, 0]
     num_total_grasps = [0, 0]
     
-    tbar = tqdm(test_loader, desc='Inference:', ncols=100)
+    tbar = tqdm(
+        test_loader,
+        desc='Inference:',
+        ncols=100,
+        disable=rank != 0,
+    )
     for cnt, data in enumerate(tbar):
         
         # data
@@ -520,7 +527,10 @@ def inference_with_grasp(test_loader, model, args):
             union = np.logical_or(ins_mask_pred, ins_mask_target)
             
             iou = np.sum(inter) / (np.sum(union) + 1e-6)
-            iou_list.append(iou)
+            iou_sum += float(iou)
+            sample_count += 1
+            for threshold_idx, threshold in enumerate(thresholds):
+                precision_counts[threshold_idx] += int(iou > threshold)
             
             # Calculate grasp configurations
             for i in range(len(num_grasps)):
@@ -536,29 +546,44 @@ def inference_with_grasp(test_loader, model, args):
                 if args.visualize:
                     img_bgr = cv2.imread(img_path)
                     img = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
-                    visualization(img, ins_mask_pred, (grasp_qua_mask_pred, grasp_ang_mask_pred, grasp_wid_mask_pred), grasp_preds, sent, save_path=os.path.join("./results", args.exp_name, f"results_{cnt}_{num_g}_grasps.png"))
+                    visualization(img, ins_mask_pred, (grasp_qua_mask_pred, grasp_ang_mask_pred, grasp_wid_mask_pred), grasp_preds, sent, save_path=os.path.join("./results", args.exp_name, f"results_rank{rank}_{cnt}_{num_g}_grasps.png"))
                 
-    J_index = [0, 0]
-    for i in range(len(num_grasps)):
-        J_index[i] = num_correct_grasps[i]/num_total_grasps[i]
-            
-    iou_list = np.stack(iou_list)
-    iou_list = torch.from_numpy(iou_list).to(image.device)
-    # print(iou_list)
-    # iou_list = concat_all_gather(iou_list)
-    prec_list = []
-    for thres in torch.arange(0.5, 1.0, 0.1):
-        tmp = (iou_list > thres).float().mean()
-        prec_list.append(tmp)
-    iou = iou_list.mean()
-    prec = {}
-    for i, thres in enumerate(range(5, 10)):
-        key = 'Pr@{}'.format(thres*10)
-        value = prec_list[i].item()
-        prec[key] = value
-    logger.info('IoU={:.2f}'.format(100.*iou.item()))
-    for k, v in prec.items():
-        logger.info('{}: {:.2f}.'.format(k, 100.*v))
-    logger.info("J@1: {:.2f}, J@5: {:.2f}".format(100. * J_index[0], 100. * J_index[1]))
+    stats = torch.tensor(
+        [
+            iou_sum,
+            sample_count,
+            *precision_counts,
+            num_correct_grasps[0],
+            num_total_grasps[0],
+            num_correct_grasps[1],
+            num_total_grasps[1],
+        ],
+        dtype=torch.float32,
+        device=args.device,
+    )
+    if dist.is_available() and dist.is_initialized():
+        dist.all_reduce(stats, op=dist.ReduceOp.SUM)
+
+    total = stats[1].clamp_min(1.0)
+    iou = stats[0] / total
+    prec = {
+        "Pr@{}".format(int(threshold * 100)): (
+            stats[2 + index] / total
+        ).item()
+        for index, threshold in enumerate(thresholds)
+    }
+    J_index = [
+        (stats[7] / stats[8].clamp_min(1.0)).item(),
+        (stats[9] / stats[10].clamp_min(1.0)).item(),
+    ]
+    if rank == 0:
+        logger.info('IoU={:.2f}'.format(100.*iou.item()))
+        for key, value in prec.items():
+            logger.info('{}: {:.2f}.'.format(key, 100.*value))
+        logger.info(
+            "J@1: {:.2f}, J@5: {:.2f}".format(
+                100. * J_index[0], 100. * J_index[1]
+            )
+        )
 
     return iou.item(), prec, J_index

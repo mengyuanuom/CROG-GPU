@@ -52,6 +52,14 @@ class OfficialCROGNPUConfigTest(unittest.TestCase):
         self.assertIn("split=test_split", source)
         self.assertNotIn("torch.nn.DataParallel", source)
 
+    def test_multi_npu_evaluation_shards_and_reduces_metrics(self):
+        evaluator = (ROOT / "test_crog.py").read_text(encoding="utf-8")
+        engine = (ROOT / "engine" / "crog_engine.py").read_text(encoding="utf-8")
+        self.assertIn('backend="hccl"', evaluator)
+        self.assertIn("range(args.rank, len(full_test_data), args.world_size)", evaluator)
+        self.assertIn("dist.all_reduce(stats, op=dist.ReduceOp.SUM)", engine)
+        self.assertIn("disable=rank != 0", engine)
+
 
     def test_sync_batchnorm_is_disabled_for_all_npu_configs(self):
         config_root = ROOT / "config"

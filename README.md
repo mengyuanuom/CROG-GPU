@@ -94,6 +94,19 @@ ASCEND_RT_VISIBLE_DEVICES=0 python3 test_crog.py \
          TEST.test_split test
 ```
 
+For eight-NPU evaluation, the dataset is sharded without padding and the
+metrics are summed with HCCL:
+
+```bash
+ASCEND_RT_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 torchrun \
+  --standalone --nproc_per_node=8 test_crog.py \
+  --config config/OCID-VLG/crog_multiple_r50.yaml \
+  --opts DATA.root_path datasets/OCID-VLG \
+         TRAIN.resume exp/OCID-VLG_multiple_npu/CROG_official_multiple_R50_8npu/best_jindex_model.pth \
+         TEST.test_split test
+```
+
+
 
 The weight can also be downloaded separately:
 
