@@ -163,7 +163,7 @@ class RefOCIDGraspDataset(Dataset):
             center_x, center_y, width, height, theta, cls_id = rect
             box = ((center_x, center_y), (width, height), -(theta+180))
             box = cv2.boxPoints(box)
-            box = np.int0(box)
+            box = np.intp(box)
             cv2.drawContours(rgb_with_grasp, [box], 0, color.tolist(), 2)
         
 
@@ -352,7 +352,7 @@ class RefOCIDGraspDataset(Dataset):
             # Convert from our angle represent to opencv's
             r_rect = ((center_x, center_y), (w_rect/2, h_rect), -(theta+180))
             box = cv2.boxPoints(r_rect)
-            box = np.int0(box)
+            box = np.intp(box)
 
             rr, cc = polygon(box[:, 0], box[:,1])
 

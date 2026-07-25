@@ -38,7 +38,7 @@ def draw_lincomb(ids_p, proto_data, masks, img_name, target_dir=None):
 
                 arr_img[y * p_h:(y + 1) * p_h, x * p_w:(x + 1) * p_w] = (proto_data[:, :, idx[i]] / torch.max(
                     proto_data[:, :, idx[i]])).cpu().numpy() * coeffs_sort[i]
-                arr_run[y * p_h:(y + 1) * p_h, x * p_w:(x + 1) * p_w] = (running_total_nonlin > 0.5).astype(np.float)
+                arr_run[y * p_h:(y + 1) * p_h, x * p_w:(x + 1) * p_w] = (running_total_nonlin > 0.5).astype(np.float32)
 
         arr_img = ((arr_img + 1) * 127.5).astype('uint8')
         arr_img = cv2.applyColorMap(arr_img, cv2.COLORMAP_WINTER)
@@ -309,7 +309,7 @@ def calculate_iou(rect_p, rect_gt, shape=(480, 640), angle_threshold=30):
     center_x, center_y, w_rect, h_rect, theta, _ = rect_gt
     gt_r_rect = ((center_x, center_y), (w_rect, h_rect), -theta)
     gt_box = cv2.boxPoints(gt_r_rect)
-    gt_box = np.int0(gt_box)
+    gt_box = np.intp(gt_box)
     rr1, cc1 = polygon(gt_box[:, 0], gt_box[:,1], shape)
 
     mask_rr = rr1 < shape[1]
@@ -323,7 +323,7 @@ def calculate_iou(rect_p, rect_gt, shape=(480, 640), angle_threshold=30):
     center_x, center_y, w_rect, h_rect, theta = rect_p
     p_r_rect = ((center_x, center_y), (w_rect, h_rect), -theta)
     p_box = cv2.boxPoints(p_r_rect)
-    p_box = np.int0(p_box)
+    p_box = np.intp(p_box)
     rr2, cc2 = polygon(p_box[:, 0], p_box[:,1], shape)
 
     mask_rr = rr2 < shape[1]

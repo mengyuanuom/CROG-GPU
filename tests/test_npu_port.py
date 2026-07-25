@@ -99,6 +99,19 @@ class OfficialCROGNPUConfigTest(unittest.TestCase):
         self.assertIn("if not enabled:\n        return NoOpGradScaler()", runtime)
         self.assertNotIn("TRAIN.amp", launcher)
 
+    def test_source_has_no_removed_numpy_scalar_aliases(self):
+        removed = (
+            re.compile(r"\bnp\.int0\b"),
+            re.compile(r"\bnp\.float\b"),
+            re.compile(r"\bnp\.int\b"),
+            re.compile(r"\bnp\.bool\b"),
+        )
+        for path in ROOT.rglob("*.py"):
+            source = path.read_text(encoding="utf-8")
+            with self.subTest(path=path.relative_to(ROOT)):
+                for pattern in removed:
+                    self.assertIsNone(pattern.search(source))
+
 
 if __name__ == "__main__":
     unittest.main()
