@@ -4,7 +4,6 @@ import warnings
 
 import cv2
 import torch
-import torch.nn.parallel
 import torch.utils.data
 from loguru import logger
 
@@ -13,6 +12,7 @@ from engine.crog_engine import inference_with_grasp
 from model import build_crog
 from utils.dataset import OCIDVLGDataset
 from utils.misc import setup_logger
+from utils.npu import set_device
 
 warnings.filterwarnings("ignore")
 cv2.setNumThreads(0)
@@ -37,9 +37,11 @@ def get_parser():
     return cfg
 
 
-@logger.catch
+@logger.catch(reraise=True)
 def main():
     args = get_parser()
+    args.npu = int(os.environ.get("LOCAL_RANK", 0))
+    args.device = set_device(args.npu)
     args.output_dir = os.path.join(args.output_folder, args.exp_name)
     if args.visualize:
         args.vis_dir = os.path.join(args.output_dir, "vis")
@@ -53,21 +55,35 @@ def main():
     logger.info(args)
 
     # build dataset & dataloader
+    test_split = getattr(args, "test_split", "test")
+    if test_split == "val-test":
+        logger.warning(
+            "test_split='val-test' is not an OCID-VLG split; using 'test'."
+        )
+        test_split = "test"
+    if test_split not in {"train", "val", "test"}:
+        raise ValueError(
+            f"Unsupported OCID-VLG test split: {test_split!r}. "
+            "Choose train, val, or test."
+        )
     test_data = OCIDVLGDataset(root_dir=args.root_path,
                             input_size=args.input_size,
                             word_length=args.word_len,
-                            split='test',
+                            split=test_split,
+                            with_depth=bool(getattr(args, "with_depth", False)),
                             version=args.version)
     test_loader = torch.utils.data.DataLoader(test_data,
                                               batch_size=1,
                                               shuffle=False,
                                               num_workers=1,
-                                              pin_memory=True,
+                                              pin_memory=bool(
+                                                  getattr(args, "pin_memory", False)
+                                              ),
                                               collate_fn=OCIDVLGDataset.collate_fn)
 
     # build model
     model, _ = build_crog(args)
-    model = torch.nn.DataParallel(model).cuda()
+    model = model.to(args.device)
     logger.info(model)
     
     save_path = os.path.join("./results", args.exp_name)
@@ -75,13 +91,18 @@ def main():
 
     if os.path.isfile(args.resume):
         logger.info("=> loading checkpoint '{}'".format(args.resume))
-        checkpoint = torch.load(args.resume)
-        model.load_state_dict(checkpoint['state_dict'], strict=True)
+        checkpoint = torch.load(args.resume, map_location="cpu")
+        state_dict = checkpoint.get("state_dict", checkpoint)
+        state_dict = {
+            key.removeprefix("module."): value
+            for key, value in state_dict.items()
+        }
+        model.load_state_dict(state_dict, strict=True)
         logger.info("=> loaded checkpoint '{}'".format(args.resume))
     else:
         raise ValueError(
             "=> resume failed! no checkpoint found at '{}'. Please check args.resume again!"
-            .format(args.model_dir))
+            .format(args.resume))
 
     # inference
     inference_with_grasp(test_loader, model, args)

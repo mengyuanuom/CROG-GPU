@@ -17,7 +17,7 @@ class OfficialCROGNPUConfigTest(unittest.TestCase):
             r"^\s*batch_size_val:\s*24\b",
             r"^\s*base_lr:\s*0\.0001\b",
             r"^\s*lr_multi:\s*0\.1\b",
-            r"^\s*sync_bn:\s*True\s*$",
+            r"^\s*sync_bn:\s*False\b",
             r"^\s*amp:\s*False\b",
             r"^\s*pin_memory:\s*False\s*$",
             r"^\s*with_depth:\s*False\s*$",
@@ -32,6 +32,7 @@ class OfficialCROGNPUConfigTest(unittest.TestCase):
     def test_training_path_has_no_cuda_or_nccl_calls(self):
         paths = (
             ROOT / "train_crog.py",
+            ROOT / "test_crog.py",
             ROOT / "engine" / "crog_engine.py",
             ROOT / "utils" / "misc.py",
             ROOT / "utils" / "npu.py",
@@ -42,6 +43,29 @@ class OfficialCROGNPUConfigTest(unittest.TestCase):
             with self.subTest(path=path.name):
                 for token in forbidden:
                     self.assertNotIn(token, source)
+
+    def test_single_npu_evaluation_loads_ddp_checkpoints(self):
+        source = (ROOT / "test_crog.py").read_text(encoding="utf-8")
+        self.assertIn("set_device(args.npu)", source)
+        self.assertIn('map_location="cpu"', source)
+        self.assertIn('key.removeprefix("module.")', source)
+        self.assertIn("split=test_split", source)
+        self.assertNotIn("torch.nn.DataParallel", source)
+
+
+    def test_sync_batchnorm_is_disabled_for_all_npu_configs(self):
+        config_root = ROOT / "config"
+        for path in config_root.rglob("*.yaml"):
+            source = path.read_text(encoding="utf-8")
+            with self.subTest(path=path.relative_to(ROOT)):
+                self.assertNotRegex(
+                    source,
+                    re.compile(r"^\s*sync_bn:\s*True\b", re.MULTILINE),
+                )
+
+        trainer = (ROOT / "train_crog.py").read_text(encoding="utf-8")
+        self.assertNotIn("convert_sync_batchnorm", trainer)
+        self.assertIn("args.sync_bn = False", trainer)
 
     def test_clip_download_uses_the_official_hashed_url(self):
         source = (

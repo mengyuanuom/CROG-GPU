@@ -115,7 +115,12 @@ def main_worker(local_rank, args):
     # build model
     model, param_list = build_crog(args)
     if args.sync_bn:
-        model = nn.SyncBatchNorm.convert_sync_batchnorm(model)
+        logger.warning(
+            "SyncBatchNorm is disabled for the Ascend NPU training path. "
+            "torch_npu SyncBatchNorm can trigger device-side AIVector/MTE "
+            "faults during multi-NPU training; using per-rank BatchNorm."
+        )
+        args.sync_bn = False
     logger.info(model)
     logger.info(args)
     

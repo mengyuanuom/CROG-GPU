@@ -13,7 +13,7 @@ TRAIN:
   vis_dim: 512
   fpn_in: [512, 1024, 1024]
   fpn_out: [256, 512, 1024]
-  sync_bn: True
+  sync_bn: False  # torch_npu SyncBatchNorm can trigger AIVector/MTE faults
   # Decoder
   num_layers: 3
   num_head: 8

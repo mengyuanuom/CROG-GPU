@@ -50,6 +50,9 @@ learning-rate decay. Only the accelerator/runtime path is changed:
 - explicit `torch_npu` device calls instead of CUDA calls;
 - HCCL and `torchrun` instead of NCCL and the in-process GPU launcher;
 - full FP32 on Ascend because AMP caused gradient overflow;
+- per-rank BatchNorm instead of SyncBatchNorm. The latter is deliberately
+  disabled because torch_npu SyncBatchNorm can produce device-side
+  AIVector/MTE faults during multi-NPU training;
 - CPU checkpoint loading followed by explicit optimizer-state migration.
 
 Install the PyTorch/torch_npu pair matching the server's CANN release, then:
@@ -80,6 +83,17 @@ bash tools/train_crog_8npu.sh
 The FP32 path bypasses both autocast and `torch_npu.npu.amp.GradScaler`; it
 uses ordinary `loss.backward()` and `optimizer.step()` so a disabled scaler
 cannot still enter an Ascend overflow-status check.
+
+Evaluate a CROG checkpoint on one NPU with:
+
+```bash
+ASCEND_RT_VISIBLE_DEVICES=0 python3 test_crog.py \
+  --config config/OCID-VLG/crog_multiple_r50.yaml \
+  --opts DATA.root_path datasets/OCID-VLG \
+         TRAIN.resume exp/OCID-VLG_multiple_npu/CROG_official_multiple_R50_8npu/best_jindex_model.pth \
+         TEST.test_split test
+```
+
 
 The weight can also be downloaded separately:
 
