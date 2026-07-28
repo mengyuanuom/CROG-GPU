@@ -202,7 +202,7 @@ def validate_with_grasp(val_loader, model, epoch, args):
         grasp_wid_mask = grasp_wid_mask.to(args.device, non_blocking=True).unsqueeze(1)
 
         # inference & get predictions from model
-        pred, target = model(image, text, ins_mask, grasp_qua_mask, grasp_sin_mask, grasp_cos_mask, grasp_wid_mask)
+        pred, _ = model(image, text, ins_mask, grasp_qua_mask, grasp_sin_mask, grasp_cos_mask, grasp_wid_mask)
 
         # predictions
         ins_mask_preds = pred[0]
@@ -212,12 +212,13 @@ def validate_with_grasp(val_loader, model, epoch, args):
         grasp_wid_mask_preds = pred[4]
         grasp_off_mask_preds = pred[5] if len(pred) > 5 else None
 
-        # targets
-        ins_mask_targets = target[0]
-        grasp_qua_mask_targets = target[1]
-        grasp_sin_mask_targets = target[2]
-        grasp_cos_mask_targets = target[3]
-        grasp_wid_mask_targets = target[4]
+        # Evaluation uses original input-resolution dataloader targets.
+        # Model-returned targets may be resized for training loss computation.
+        ins_mask_targets = ins_mask
+        grasp_qua_mask_targets = grasp_qua_mask
+        grasp_sin_mask_targets = grasp_sin_mask
+        grasp_cos_mask_targets = grasp_cos_mask
+        grasp_wid_mask_targets = grasp_wid_mask
 
         # Interpolate the predicted ins mask to the same size of input image
         ins_mask_preds = torch.sigmoid(ins_mask_preds)
@@ -397,7 +398,8 @@ def validate_without_grasp(val_loader, model, epoch, args):
         grasp_wid_mask = grasp_wid_mask.to(args.device, non_blocking=True).unsqueeze(1)
 
         # inference & get predictions from model
-        pred, ins_mask_targets = model(image, text, ins_mask, grasp_qua_mask, grasp_sin_mask, grasp_cos_mask, grasp_wid_mask)
+        pred, _ = model(image, text, ins_mask, grasp_qua_mask, grasp_sin_mask, grasp_cos_mask, grasp_wid_mask)
+        ins_mask_targets = ins_mask
 
         # Interpolate the predicted ins mask to the same size of input image
         ins_mask_preds = torch.sigmoid(pred)
@@ -504,7 +506,7 @@ def inference_with_grasp(test_loader, model, args):
         grasp_wid_mask = grasp_wid_mask.to(args.device, non_blocking=True).unsqueeze(1)
 
         # inference & get predictions from model
-        pred, target = model(image, text, ins_mask, grasp_qua_mask, grasp_sin_mask, grasp_cos_mask, grasp_wid_mask)
+        pred, _ = model(image, text, ins_mask, grasp_qua_mask, grasp_sin_mask, grasp_cos_mask, grasp_wid_mask)
 
         # predictions
         ins_mask_preds = pred[0]
@@ -514,12 +516,13 @@ def inference_with_grasp(test_loader, model, args):
         grasp_wid_mask_preds = pred[4]
         grasp_off_mask_preds = pred[5] if len(pred) > 5 else None
 
-        # targets
-        ins_mask_targets = target[0]
-        grasp_qua_mask_targets = target[1]
-        grasp_sin_mask_targets = target[2]
-        grasp_cos_mask_targets = target[3]
-        grasp_wid_mask_targets = target[4]
+        # Evaluation uses original input-resolution dataloader targets.
+        # Model-returned targets may be resized for training loss computation.
+        ins_mask_targets = ins_mask
+        grasp_qua_mask_targets = grasp_qua_mask
+        grasp_sin_mask_targets = grasp_sin_mask
+        grasp_cos_mask_targets = grasp_cos_mask
+        grasp_wid_mask_targets = grasp_wid_mask
 
         # Interpolate the predicted ins mask to the same size of input image
         ins_mask_preds = torch.sigmoid(ins_mask_preds)

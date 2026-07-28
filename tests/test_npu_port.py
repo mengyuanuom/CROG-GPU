@@ -211,6 +211,23 @@ class OfficialCROGNPUConfigTest(unittest.TestCase):
             r"(?m)^\s*offset_resample_geometry:\s*True\s*$",
         )
 
+    def test_evaluation_keeps_ground_truth_on_the_input_canvas(self):
+        engine = (ROOT / "engine" / "crog_engine.py").read_text(encoding="utf-8")
+        model = (ROOT / "model" / "drogoff.py").read_text(encoding="utf-8")
+        self.assertLess(
+            model.index("if not self.training:"),
+            model.index("target_size = seg.shape[-2:]"),
+        )
+        self.assertEqual(engine.count("ins_mask_targets = ins_mask"), 3)
+        for assignment in (
+            "grasp_qua_mask_targets = grasp_qua_mask",
+            "grasp_sin_mask_targets = grasp_sin_mask",
+            "grasp_cos_mask_targets = grasp_cos_mask",
+            "grasp_wid_mask_targets = grasp_wid_mask",
+        ):
+            self.assertEqual(engine.count(assignment), 2)
+        self.assertNotIn("ins_mask_targets = target[0]", engine)
+
     def test_drog_configs_match_the_requested_global_schedule(self):
         expected_optimization = {
             "drog.yaml": ("drog", 24, "0.0001"),

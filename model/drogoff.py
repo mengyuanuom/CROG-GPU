@@ -37,6 +37,18 @@ class DROGOFF(DROG):
         if mask is None:
             return outputs
 
+        targets = (
+            mask,
+            grasp_qua_mask,
+            grasp_sin_mask,
+            grasp_cos_mask,
+            grasp_wid_mask,
+            grasp_off_mask,
+        )
+        if not self.training:
+            return tuple(x.detach() for x in outputs), targets
+
+        # Only loss computation needs targets at the prediction resolution.
         target_size = seg.shape[-2:]
         mask = F.interpolate(mask, target_size, mode="nearest").detach()
         grasp_qua_mask = F.interpolate(
@@ -60,8 +72,6 @@ class DROGOFF(DROG):
             grasp_wid_mask,
             grasp_off_mask,
         )
-        if not self.training:
-            return tuple(x.detach() for x in outputs), targets
 
         if grasp_off_mask is None or grasp_off_weight is None:
             raise ValueError("DROGOFF training requires offset and offset-weight maps")
