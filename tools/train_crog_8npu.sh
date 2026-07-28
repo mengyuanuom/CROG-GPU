@@ -22,7 +22,7 @@ CONFIG="${CONFIG:-config/OCID-VLG/crog_multiple_r50.yaml}"
 }
 # Download the official OpenAI checkpoint when absent and verify its SHA-256
 # before every run. A partial/invalid file never reaches model construction.
-python3 tools/download_clip_rn50.py --output "${CLIP_WEIGHT}"
+python3 tools/download_pretrained.py clip-rn50 --output "${CLIP_WEIGHT}"
 
 echo "[launch] visible NPUs: ${ASCEND_RT_VISIBLE_DEVICES}"
 echo "[launch] torchrun processes on this node: ${NPROC_PER_NODE}"

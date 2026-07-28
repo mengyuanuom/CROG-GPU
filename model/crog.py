@@ -3,6 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from model.clip import build_model
+from utils.pretrained import ensure_pretrained
 
 from .layers import FPN, Projector, TransformerDecoder, MultiTaskProjector
 
@@ -17,7 +18,8 @@ class CROG(nn.Module):
         self.use_grasp_masks = cfg.use_grasp_masks
         
         # Vision & Text Encoder
-        clip_model = torch.jit.load(cfg.clip_pretrain,
+        clip_pretrain = ensure_pretrained(cfg.clip_pretrain, "clip-rn50")
+        clip_model = torch.jit.load(str(clip_pretrain),
                                     map_location="cpu").eval()
         print(f"Load pretrained CLIP: {self.use_pretrained_clip}")
         self.backbone = build_model(clip_model.state_dict(), cfg.word_len, self.use_pretrained_clip).float()

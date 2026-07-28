@@ -7,6 +7,7 @@ from .drog_layers import Neck, Decoder, Projector
 from .drog_fusion import Fusion
 from .dinov2.models.vision_transformer import vit_base,vit_large
 from .drog_projector import build_projector
+from utils.pretrained import ensure_pretrained
 
 class DROG(nn.Module):
     def __init__(self, cfg):
@@ -14,7 +15,11 @@ class DROG(nn.Module):
         # Text Encoder
         self.use_grasp_masks = cfg.use_grasp_masks
 
-        clip_model = torch.jit.load(cfg.clip_pretrain,
+        clip_pretrain = ensure_pretrained(cfg.clip_pretrain, "clip-vit-b16")
+        dino_pretrain = ensure_pretrained(
+            cfg.dino_pretrain, "dinov2-vitb14-reg4"
+        )
+        clip_model = torch.jit.load(str(clip_pretrain),
                                     map_location="cpu").eval()
         self.txt_backbone = build_model(clip_model.state_dict(), cfg.word_len, cfg.input_size, cfg.txtual_adapter_layer,cfg.txt_adapter_dim).float()
         self.fusion = Fusion(d_model=cfg.ladder_dim, nhead=cfg.nhead,dino_layers=cfg.dino_layers, output_dinov2=cfg.output_dinov2)
@@ -25,7 +30,7 @@ class DROG(nn.Module):
                 param.requires_grad = False
 
 
-        state_dict = torch.load(cfg.dino_pretrain, map_location="cpu")
+        state_dict = torch.load(str(dino_pretrain), map_location="cpu")
         if cfg.dino_name=='dino-base':
             self.dinov2 = vit_base(
                 patch_size=14,

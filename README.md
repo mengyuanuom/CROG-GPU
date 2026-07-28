@@ -113,11 +113,9 @@ ASCEND_RT_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 torchrun \
 
 `config/OCID-VLG/drog.yaml` and `config/OCID-VLG/drogoff.yaml` select the
 DINOv2/CLIP-B16 models. DROG-OFF keeps its offset post-processing, while all
-resulting grasp rectangles are judged by CROG's scoring functions. Put these
-pretrained files under `pretrain/`:
-
-- `ViT-B-16.pt`
-- `dinov2_vitb14_reg4_pretrain.pth`
+resulting grasp rectangles are judged by CROG's scoring functions. The launcher
+checks `pretrain/` and automatically downloads either missing official backbone
+before starting `torchrun`. Direct model construction performs the same check.
 
 Train DROG on eight NPUs:
 
@@ -152,14 +150,34 @@ to 100, the original periodic-angle test, and strict `IoU > 0.25`. DROG-OFF's
 offset head is supervised during training and refines the predicted center (plus
 angle/width resampling) before the resulting rectangle is passed to the unchanged
 CROG Jacquard scorer.
-The weight can also be downloaded separately:
+
+## Automatic pretrained weights
+
+List every registered filename and official URL:
 
 ```bash
-python tools/download_clip_rn50.py
+python3 tools/download_pretrained.py
 ```
 
-Official direct URL:
-<https://openaipublic.azureedge.net/clip/models/afeb0e10f9e5a86da6080e35cf09123aca3b358a0c3e3b6c78a7b63bc04b6762/RN50.pt>
+Download the CROG/DROG backbones in advance (optional):
+
+```bash
+python3 tools/download_pretrained.py clip-rn50 clip-vit-b16 dinov2-vitb14-reg4
+```
+
+| Key | File | Official source |
+| --- | --- | --- |
+| `clip-rn50` | `RN50.pt` | [OpenAI CLIP RN50](https://openaipublic.azureedge.net/clip/models/afeb0e10f9e5a86da6080e35cf09123aca3b358a0c3e3b6c78a7b63bc04b6762/RN50.pt) |
+| `clip-rn101` | `RN101.pt` | [OpenAI CLIP RN101](https://openaipublic.azureedge.net/clip/models/8fa8567bab74a42d41c5915025a8e4538c3bdbe8804a470a72f30b0d94fab599/RN101.pt) |
+| `clip-vit-b16` | `ViT-B-16.pt` | [OpenAI CLIP ViT-B/16](https://openaipublic.azureedge.net/clip/models/5806e77cd80f8b59890b7e101eabd078d9fb84e6937f9e85e4ecb61988df416f/ViT-B-16.pt) |
+| `dinov2-vitb14-reg4` | `dinov2_vitb14_reg4_pretrain.pth` | [Meta DINOv2 ViT-B/14 Registers](https://dl.fbaipublicfiles.com/dinov2/dinov2_vitb14/dinov2_vitb14_reg4_pretrain.pth) |
+| `mambavision-t` | `mambavision_tiny_1k.pth.tar` | [NVIDIA MambaVision-T](https://huggingface.co/nvidia/MambaVision-T-1K/resolve/main/mambavision_tiny_1k.pth.tar) |
+| `resnet18` | `resnet18-f37072fd.pth` | [PyTorch ResNet-18](https://download.pytorch.org/models/resnet18-f37072fd.pth) |
+
+Existing non-empty DINOv2 files are reused; CLIP, MambaVision, and ResNet
+files are additionally checksum-verified. Downloads use a lock and an atomic rename,
+so multi-process evaluation cannot consume a partial file. On failure, the error
+prints the same official URL for manual download.
 
 Custom locations can be supplied without editing files:
 
