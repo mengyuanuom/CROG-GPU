@@ -212,15 +212,21 @@ class OfficialCROGNPUConfigTest(unittest.TestCase):
         )
 
     def test_drog_configs_match_the_requested_global_schedule(self):
-        for name, architecture in (("drog.yaml", "drog"), ("drogoff.yaml", "drogoff")):
+        expected_optimization = {
+            "drog.yaml": ("drog", 24, "0.0001"),
+            "drogoff.yaml": ("drogoff", 128, "0.0004"),
+        }
+        for name, (architecture, batch_size, base_lr) in expected_optimization.items():
             source = (ROOT / "config" / "OCID-VLG" / name).read_text(encoding="utf-8")
             with self.subTest(config=name):
                 self.assertRegex(source, rf"(?m)^\s*architecture:\s*{architecture}\s*$")
                 self.assertRegex(source, r"(?m)^\s*epochs:\s*50\s*$")
                 self.assertRegex(source, r"(?m)^\s*milestones:\s*\[35\]\s*$")
-                self.assertRegex(source, r"(?m)^\s*batch_size:\s*24\b")
+                self.assertRegex(source, rf"(?m)^\s*batch_size:\s*{batch_size}\b")
                 self.assertRegex(source, r"(?m)^\s*batch_size_val:\s*24\b")
-                self.assertRegex(source, r"(?m)^\s*base_lr:\s*0\.0001\b")
+                self.assertRegex(
+                    source, rf"(?m)^\s*base_lr:\s*{re.escape(base_lr)}\b"
+                )
                 self.assertNotIn("evaluation_protocol", source)
 
 if __name__ == "__main__":
