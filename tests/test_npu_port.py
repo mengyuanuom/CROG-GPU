@@ -152,5 +152,76 @@ class OfficialCROGNPUConfigTest(unittest.TestCase):
                     self.assertIsNone(pattern.search(source))
 
 
+    def test_drog_family_uses_crog_scorer_after_model_postprocess(self):
+        trainer = (ROOT / "train_crog.py").read_text(encoding="utf-8")
+        evaluator = (ROOT / "test_crog.py").read_text(encoding="utf-8")
+        engine = (ROOT / "engine" / "crog_engine.py").read_text(encoding="utf-8")
+        inference = engine.split("def inference_with_grasp", 1)[1]
+
+        self.assertIn("from model import build_model", trainer)
+        self.assertIn("from model import build_model", evaluator)
+        self.assertIn("model, _ = build_model(args)", evaluator)
+        self.assertIn("pred[5]", inference)
+        self.assertIn("_apply_model_offset(", inference)
+        self.assertLess(
+            inference.index("_apply_model_offset("),
+            inference.index("calculate_jacquard_index("),
+        )
+        for token in (
+            "flags=cv2.INTER_CUBIC",
+            "align_corners=True",
+            "ins_mask_pred = (ins_mask_pred > 0.35)",
+            "num_grasps = [1,5]",
+            "detect_grasps(",
+            "calculate_jacquard_index(",
+        ):
+            self.assertIn(token, inference)
+
+    def test_historical_crog_grasp_operations_are_preserved(self):
+        source = (ROOT / "utils" / "grasp_eval.py").read_text(encoding="utf-8")
+        for token in (
+            "shape=(480, 640)",
+            "min_distance=2",
+            "threshold_abs=0.4",
+            "grasp_width*max_width, 20",
+            "grasp_targets[:, 3] = 20",
+            "grasp_targets[:, 2] = np.clip(grasp_targets[:, 2], 0, 100)",
+            "if iou > iou_threshold:",
+        ):
+            self.assertIn(token, source)
+
+    def test_drogoff_offset_is_trained_and_used_before_crog_scoring(self):
+        dataset = (ROOT / "utils" / "dataset.py").read_text(encoding="utf-8")
+        trainer = (ROOT / "train_crog.py").read_text(encoding="utf-8")
+        engine = (ROOT / "engine" / "crog_engine.py").read_text(encoding="utf-8")
+        model = (ROOT / "model" / "drogoff.py").read_text(encoding="utf-8")
+        self.assertIn("with_grasp_offset=needs_offset", trainer)
+        self.assertIn('architecture == "drogoff"', trainer)
+        self.assertIn('data["grasp_masks"].get("off")', engine)
+        self.assertIn("make_dense_offset_with_radius_np", dataset)
+        self.assertIn("supports_offset = True", model)
+        self.assertIn("offset_loss", model)
+        self.assertIn("refine_with_offset(", engine)
+        self.assertIn("resample_grasp_geometry(", engine)
+        drogoff_config = (
+            ROOT / "config" / "OCID-VLG" / "drogoff.yaml"
+        ).read_text(encoding="utf-8")
+        self.assertRegex(
+            drogoff_config,
+            r"(?m)^\s*offset_resample_geometry:\s*True\s*$",
+        )
+
+    def test_drog_configs_match_the_requested_global_schedule(self):
+        for name, architecture in (("drog.yaml", "drog"), ("drogoff.yaml", "drogoff")):
+            source = (ROOT / "config" / "OCID-VLG" / name).read_text(encoding="utf-8")
+            with self.subTest(config=name):
+                self.assertRegex(source, rf"(?m)^\s*architecture:\s*{architecture}\s*$")
+                self.assertRegex(source, r"(?m)^\s*epochs:\s*50\s*$")
+                self.assertRegex(source, r"(?m)^\s*milestones:\s*\[35\]\s*$")
+                self.assertRegex(source, r"(?m)^\s*batch_size:\s*24\b")
+                self.assertRegex(source, r"(?m)^\s*batch_size_val:\s*24\b")
+                self.assertRegex(source, r"(?m)^\s*base_lr:\s*0\.0001\b")
+                self.assertNotIn("evaluation_protocol", source)
+
 if __name__ == "__main__":
     unittest.main()

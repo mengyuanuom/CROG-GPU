@@ -53,6 +53,61 @@ info = {
 }
 _tokenizer = _Tokenizer()
 
+def make_dense_offset_with_radius_np(
+    centers_xy, img_size_hw, r_pix, use_gaussian=True, sigma=None
+):
+    """Generate normalized center-offset targets for DROG-OFF training."""
+    height, width = int(img_size_hw[0]), int(img_size_hw[1])
+    offset = np.zeros((2, height, width), dtype=np.float32)
+    offset_weight = np.zeros((1, height, width), dtype=np.float32)
+    if centers_xy is None:
+        return offset, offset_weight
+
+    centers = np.asarray(centers_xy, dtype=np.float32).reshape(-1, 2)
+    if centers.size == 0:
+        return offset, offset_weight
+
+    radius = float(max(1.0, r_pix))
+    if sigma is None:
+        sigma = 0.5 * radius
+    nearest_distance = np.full((height, width), np.inf, dtype=np.float32)
+
+    for center_x, center_y in centers:
+        x0 = max(0, int(np.floor(center_x - radius)))
+        x1 = min(width, int(np.ceil(center_x + radius)) + 1)
+        y0 = max(0, int(np.floor(center_y - radius)))
+        y1 = min(height, int(np.ceil(center_y + radius)) + 1)
+        if x0 >= x1 or y0 >= y1:
+            continue
+
+        xs = np.arange(x0, x1, dtype=np.float32)
+        ys = np.arange(y0, y1, dtype=np.float32)
+        grid_x, grid_y = np.meshgrid(xs, ys)
+        delta_x = center_x - grid_x
+        delta_y = center_y - grid_y
+        distance = delta_x * delta_x + delta_y * delta_y
+        inside = distance <= radius * radius
+        if not np.any(inside):
+            continue
+
+        if use_gaussian:
+            local_weight = np.exp(-distance / (2.0 * sigma * sigma))
+        else:
+            local_weight = np.ones_like(distance, dtype=np.float32)
+        local_weight *= inside.astype(np.float32)
+
+        distance_crop = nearest_distance[y0:y1, x0:x1]
+        take = inside & (distance < distance_crop)
+        if not np.any(take):
+            continue
+        distance_crop[take] = distance[take]
+        nearest_distance[y0:y1, x0:x1] = distance_crop
+        offset[0, y0:y1, x0:x1][take] = (delta_x / radius)[take]
+        offset[1, y0:y1, x0:x1][take] = (delta_y / radius)[take]
+        offset_weight[0, y0:y1, x0:x1][take] = local_weight[take]
+
+    return offset, offset_weight
+
 
 def tokenize(texts: Union[str, List[str]],
              context_length: int = 77,
@@ -113,27 +168,27 @@ class RefOCIDGraspDataset(Dataset):
         json_path = os.path.join(root_path, f"{mode}_expressions.json")
         with open(json_path, "r") as f:
             self.meta_data = json.load(f)
-        
+
         self.root_path = root_path
         self.keys = list(self.meta_data.keys())
         self.input_size = (input_size, input_size)
         self.word_length = word_length
         self.mode = mode
-        
+
         self.cls_names = cls_names
         self.colors = colors
         self.mean = torch.tensor([0.48145466, 0.4578275,
                                   0.40821073]).reshape(3, 1, 1)
         self.std = torch.tensor([0.26862954, 0.26130258,
                                  0.27577711]).reshape(3, 1, 1)
-        
+
         self.target_save_dir = os.path.join("./", mode)
         os.makedirs(self.target_save_dir, exist_ok=True)
 
-        
+
     def __len__(self):
         return len(self.keys)
-    
+
 
     def visualization(self, rgb, depth, masks, rects, grasp_masks, bbox, obj_cls, sentence):
         cls_list = list(self.cls_names.keys())
@@ -165,7 +220,7 @@ class RefOCIDGraspDataset(Dataset):
             box = cv2.boxPoints(box)
             box = np.intp(box)
             cv2.drawContours(rgb_with_grasp, [box], 0, color.tolist(), 2)
-        
+
 
         fig = plt.figure(figsize=(25, 10))
 
@@ -228,16 +283,16 @@ class RefOCIDGraspDataset(Dataset):
     def _load_rgb(self, path):
         image = cv2.imread(os.path.join(self.root_path, path))
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-    
+
         return image
-    
+
     # @functools.lru_cache(maxsize=None)
     def _load_depth(self, path, factor=1000.):
         depth = cv2.imread(os.path.join(self.root_path, path), cv2.IMREAD_UNCHANGED) / factor
         depth = 1 - (depth / np.max(depth))
 
         return depth
-    
+
     # @functools.lru_cache(maxsize=None)
     def _load_annos(self, path, target_cls):
         cls_annos_path = os.path.join(os.path.join(self.root_path, path), str(target_cls))
@@ -263,7 +318,7 @@ class RefOCIDGraspDataset(Dataset):
                     center_y = (p1[1] + p3[1]) / 2
                     width  = np.sqrt((p1[0] - p4[0]) * (p1[0] - p4[0]) + (p1[1] - p4[1]) * (p1[1] - p4[1]))
                     height = np.sqrt((p1[0] - p2[0]) * (p1[0] - p2[0]) + (p1[1] - p2[1]) * (p1[1] - p2[1]))
-                    
+
                     # @NOTE
                     # Along x+ is 0 degree, increase by rotating anti-clockwise
                     # If you want to use opencv boxPoints & drawContours to visualize grasps
@@ -311,7 +366,7 @@ class RefOCIDGraspDataset(Dataset):
             ins_vertices = [[_x1, _y1], [_x1+_w, _y1], [_x2, _y2], [_x1, _y1+_h]]
             poly2 = Polygon(ins_vertices)
 
-            if poly1.intersects(poly2): 
+            if poly1.intersects(poly2):
                 intersect = poly1.intersection(poly2).area
                 union = poly1.union(poly2).area
                 iou = intersect/union
@@ -319,7 +374,7 @@ class RefOCIDGraspDataset(Dataset):
                 if iou > max_iou:
                     max_iou = iou
                     ins_idx = ins.label
-        
+
         ins_masks = (ins_masks == ins_idx)
 
         return ins_masks
@@ -331,15 +386,15 @@ class RefOCIDGraspDataset(Dataset):
             c_x, c_y = int(rect[0]), int(rect[1])
             if ins_masks[c_y, c_x]:
                 grasps.append(rect)
-        
+
         return grasps
 
     def _filter_grasps(self, rects):
         angles = []
         for rect in rects:
             angles.append(rect[4])
-            
-    
+
+
     def _generate_grasp_masks(self, grasps, width, height):
         pos_out = np.zeros((height, width))
         ang_out = np.zeros((height, width))
@@ -370,16 +425,16 @@ class RefOCIDGraspDataset(Dataset):
                 ang_out[cc, rr] = int(theta + 180)
             else:
                 ang_out[cc, rr] = int(theta)
-            # Adopt width normalize accoding to class 
+            # Adopt width normalize accoding to class
             wid_out[cc, rr] = np.clip(w_rect, 0.0, width_factor) / width_factor
-        
+
         qua_out = (gaussian(pos_out, 3, preserve_range=True) * 255).astype(np.uint8)
         pos_out = (pos_out * 255).astype(np.uint8)
         ang_out = ang_out.astype(np.uint8)
         wid_out = (gaussian(wid_out, 3, preserve_range=True) * 255).astype(np.uint8)
-        
+
         return [pos_out, qua_out, ang_out, wid_out]
-    
+
     def getTransformMat(self, img_size, inverse=False):
         ori_h, ori_w = img_size
         inp_h, inp_w = self.input_size
@@ -427,7 +482,7 @@ class RefOCIDGraspDataset(Dataset):
             mask = torch.from_numpy(mask)
             if not isinstance(mask, torch.FloatTensor):
                 mask = mask.float()
-        
+
         if grasp_quality_mask is not None:
             grasp_quality_mask = torch.from_numpy(grasp_quality_mask)
             if not isinstance(grasp_quality_mask, torch.FloatTensor):
@@ -437,7 +492,7 @@ class RefOCIDGraspDataset(Dataset):
             grasp_sin_masks = torch.from_numpy(grasp_sin_masks)
             if not isinstance(grasp_sin_masks, torch.FloatTensor):
                 grasp_sin_masks = grasp_sin_masks.float()
-        
+
         if grasp_cos_masks is not None:
             grasp_cos_masks = torch.from_numpy(grasp_cos_masks)
             if not isinstance(grasp_cos_masks, torch.FloatTensor):
@@ -503,25 +558,25 @@ class RefOCIDGraspDataset(Dataset):
                                     self.input_size,
                                     flags=cv2.INTER_LINEAR,
                                     borderValue=0.)
-            
+
             grasp_quality_masks = cv2.warpAffine(grasp_quality_masks,
                                     mat,
                                     self.input_size,
                                     flags=cv2.INTER_LINEAR,
                                     borderValue=0.)
-            
+
             grasp_angle_masks = cv2.warpAffine(grasp_angle_masks,
                                     mat,
                                     self.input_size,
                                     flags=cv2.INTER_LINEAR,
                                     borderValue=0.)
-            
+
             grasp_width_masks = cv2.warpAffine(grasp_width_masks,
                                     mat,
                                     self.input_size,
                                     flags=cv2.INTER_LINEAR,
                                     borderValue=0.)
-            
+
             # Normalize and pre-process target masks
             ins_masks = ins_masks / 255.
             grasp_quality_masks = grasp_quality_masks / 255.
@@ -529,7 +584,7 @@ class RefOCIDGraspDataset(Dataset):
             grasp_width_masks = grasp_width_masks / 255.
             grasp_sin_masks = np.sin(2 * grasp_angle_masks)
             grasp_cos_masks = np.cos(2 * grasp_angle_masks)
-            
+
             word_vec = tokenize(sentence, self.word_length, True).squeeze(0)
 
             # self.visualization(rgb, depth, ins_masks, grasps, (grasp_quality_masks, grasp_sin_masks, grasp_cos_masks, grasp_width_masks), bbox, obj_cls, sentence)
@@ -552,7 +607,7 @@ class RefOCIDGraspDataset(Dataset):
 
 
             return rgb, (ins_masks, grasp_quality_masks, grasp_sin_masks, grasp_cos_masks, grasp_width_masks), word_vec
-        
+
         elif self.mode == 'val':
             word_vec = tokenize(sentence, self.word_length, True).squeeze(0)
 
@@ -609,20 +664,20 @@ class GraspTransforms:
 
     def __init__(self, width_factor=100, width=640, height=480):
         self.width_factor = width_factor
-        self.width = width 
+        self.width = width
         self.height = height
 
     def __call__(self, grasp_rectangles, target):
         # grasp_rectangles: (M, 4, 2)
         M = grasp_rectangles.shape[0]
         p1, p2, p3, p4 = np.split(grasp_rectangles, 4, axis=1)
-        
+
         center_x = (p1[..., 0] + p3[..., 0]) / 2
         center_y = (p1[..., 1] + p3[..., 1]) / 2
-        
+
         width  = np.sqrt((p1[..., 0] - p4[..., 0]) * (p1[..., 0] - p4[..., 0]) + (p1[..., 1] - p4[..., 1]) * (p1[..., 1] - p4[..., 1]))
         height = np.sqrt((p1[..., 0] - p2[..., 0]) * (p1[..., 0] - p2[..., 0]) + (p1[..., 1] - p2[..., 1]) * (p1[..., 1] - p2[..., 1]))
-        
+
         theta = np.arctan2(p4[..., 0] - p1[..., 0], p4[..., 1] - p1[..., 1]) * 180 / np.pi
         theta = np.where(theta > 0, theta - 90, theta + 90)
 
@@ -646,7 +701,7 @@ class GraspTransforms:
         wid_out = np.zeros((self.height, self.width))
         for rect in grasp_rectangles:
             center_x, center_y, w_rect, h_rect, theta = rect[:5]
-            
+
             # Get 4 corners of rotated rect
             # Convert from our angle represent to opencv's
             r_rect = ((center_x, center_y), (w_rect/2, h_rect), -(theta+180))
@@ -667,29 +722,29 @@ class GraspTransforms:
                 ang_out[cc, rr] = int(theta + 180)
             else:
                 ang_out[cc, rr] = int(theta)
-            # Adopt width normalize accoding to class 
+            # Adopt width normalize accoding to class
             wid_out[cc, rr] = np.clip(w_rect, 0.0, self.width_factor) / self.width_factor
-        
+
         qua_out = (gaussian(pos_out, 3, preserve_range=True) * 255).astype(np.uint8)
         pos_out = (pos_out * 255).astype(np.uint8)
         ang_out = ang_out.astype(np.uint8)
         wid_out = (gaussian(wid_out, 3, preserve_range=True) * 255).astype(np.uint8)
-        
-        
-        return {'pos': pos_out, 
-                'qua': qua_out, 
-                'ang': ang_out, 
+
+
+        return {'pos': pos_out,
+                'qua': qua_out,
+                'ang': ang_out,
                 'wid': wid_out}
 
 
 
 class OCIDVLGDataset(Dataset):
-    
+
     """ OCID-Vision-Language-Grasping dataset with referring expressions and grasps """
 
-    def __init__(self, 
+    def __init__(self,
                  root_dir,
-                 split, 
+                 split,
                  transform_img = None,
                  transform_grasp = GraspTransforms(),
                  input_size = 416,
@@ -697,23 +752,29 @@ class OCIDVLGDataset(Dataset):
                  with_depth = False,
                  with_segm_mask = True,
                  with_grasp_masks = True,
-                 version="multiple"
+                 version="multiple",
+                 with_grasp_offset=False,
+                 offset_r=20.0,
+                 offset_sigma=None
     ):
         super(OCIDVLGDataset, self).__init__()
         self.root_dir = root_dir
         self.split_dir = os.path.join(root_dir, "data_split")
-        self.split_map = {'train': 'train_expressions.json', 
+        self.split_map = {'train': 'train_expressions.json',
                           'val': 'val_expressions.json',
                           'test': 'test_expressions.json'
                          }
         self.split = split
         self.refer_dir = os.path.join(root_dir, "refer", version)
-        
+
         self.transform_img = transform_img
         self.transform_grasp = transform_grasp
         self.with_depth = with_depth
         self.with_segm_mask = with_segm_mask
         self.with_grasp_masks = with_grasp_masks
+        self.with_grasp_offset = bool(with_grasp_offset)
+        self.offset_r = float(offset_r)
+        self.offset_sigma = offset_sigma
         # assert (self.transform_grasp and self.with_grasp_masks) or (not self.transform_grasp and not self.with_grasp_masks)
 
         self.input_size = (input_size, input_size)
@@ -732,7 +793,7 @@ class OCIDVLGDataset(Dataset):
         from .OCID_sub_class_dict import cnames, colors, subnames, sub_to_class
         cnames_inv = {int(v):k for k,v in cnames.items()}
         subnames_inv = {v:k for k,v in subnames.items()}
-        self.class_names = cnames 
+        self.class_names = cnames
         self.idx_to_class = cnames_inv
         self.class_instance_names = subnames
         self.idx_to_class_instance = subnames_inv
@@ -764,33 +825,33 @@ class OCIDVLGDataset(Dataset):
             self.sent_indices.append(item['question_index'])
             self.sent_to_index[item['question_index']] = n
             n += 1
-            
+
     def get_index_from_sent(self, sent_id):
         return self.sent_to_index[sent_id]
 
     def get_sent_from_index(self, n):
         return self.sent_indices[n]
-    
+
     def _load_sent(self, sent_id):
         n = self.get_index_from_sent(sent_id)
-        
+
         scene_id = self.scene_ids[n]
-       
+
         img_path = os.path.join(self.root_dir, self.rgb_paths[n])
         img = self.get_image_from_path(img_path)
-        
+
         x, y, w, h = self.bboxes[n]
         bbox = np.asarray([x, y, x+w, y+h])
-        
+
         sent = self.sentences[n]
-        
+
         target = self.targets[n]
         target_idx = self.class_instance_names[target]
         objID = self.objIDs[n]
-        
+
         grasps = np.asarray(self.grasps[n])
-        
-        result = {'img': self.transform_img(img) if self.transform_img else img, 
+
+        result = {'img': self.transform_img(img) if self.transform_img else img,
                   'grasps':  self.transform_grasp(grasps, target_idx) if self.transform_grasp else None,
                   'grasp_rects': self.transform_grasp(grasps, target_idx) if self.transform_grasp else None,
                   'sentence': sent,
@@ -802,7 +863,7 @@ class OCIDVLGDataset(Dataset):
                   'scene_id': scene_id,
                   'img_path': img_path
                  }
-        
+
         if self.with_depth:
             depth_path = os.path.join(self.root_dir, self.depth_paths[n])
             depth = self.get_depth_from_path(depth_path)
@@ -817,11 +878,11 @@ class OCIDVLGDataset(Dataset):
         if self.with_grasp_masks:
             grasp_masks = self.transform_grasp.generate_masks(result['grasp_rects'])
             result = {**result, 'grasp_masks': grasp_masks}
-        
+
         result = self.preprocess(result)
-        
+
         return result
-    
+
     def get_transform_mat(self, img_size, inverse=False):
         ori_h, ori_w = img_size
         inp_h, inp_w = self.input_size
@@ -847,7 +908,7 @@ class OCIDVLGDataset(Dataset):
             ins_mask = (data["mask"] * 255).astype(np.uint8)
         else:
             ins_mask = data["mask"]
-        
+
         grasp_qua_mask = data["grasp_masks"]["qua"]
         grasp_ang_mask = data["grasp_masks"]["ang"]
         grasp_wid_mask = data["grasp_masks"]["wid"]
@@ -875,13 +936,13 @@ class OCIDVLGDataset(Dataset):
                                 self.input_size,
                                 flags=cv2.INTER_LINEAR,
                                 borderValue=0.)
-        
+
         grasp_ang_mask = cv2.warpAffine(grasp_ang_mask,
                                 mat,
                                 self.input_size,
                                 flags=cv2.INTER_LINEAR,
                                 borderValue=0.)
-        
+
         grasp_wid_mask = cv2.warpAffine(grasp_wid_mask,
                                 mat,
                                 self.input_size,
@@ -905,27 +966,44 @@ class OCIDVLGDataset(Dataset):
         data["grasp_masks"]["wid"] = grasp_wid_mask
         data["grasp_masks"]["sin"] = grasp_sin_mask
         data["grasp_masks"]["cos"] = grasp_cos_mask
+        if self.with_grasp_offset:
+            grasp_rects = np.asarray(data["grasp_rects"], dtype=np.float32)
+            centers = grasp_rects[:, :2] if len(grasp_rects) else np.zeros((0, 2), dtype=np.float32)
+            if len(centers):
+                homogeneous = np.concatenate(
+                    [centers, np.ones((len(centers), 1), dtype=np.float32)], axis=1
+                )
+                centers = homogeneous @ mat.T
+            offset, offset_weight = make_dense_offset_with_radius_np(
+                centers,
+                self.input_size,
+                self.offset_r,
+                use_gaussian=True,
+                sigma=self.offset_sigma,
+            )
+            data["grasp_masks"]["off"] = offset
+            data["grasp_masks"]["off_w"] = offset_weight
         data["word_vec"] = word_vec
         data["inverse"] = mat_inv
         data["ori_size"] = np.array(img_size)
-        
+
         # del data["sentence"]
-        
+
         return data
 
     def __len__(self):
         return len(self.sent_indices)
-    
+
     def __getitem__(self, n):
         sent_id = self.get_sent_from_index(n)
         data = self._load_sent(sent_id)
-        
+
         return data
-    
+
     @staticmethod
     def transform_grasp_inv(grasp_pt):
         pass
-    
+
     # @functools.lru_cache(maxsize=None)
     def get_image_from_path(self, path):
         img_bgr = cv2.imread(path)
@@ -942,14 +1020,14 @@ class OCIDVLGDataset(Dataset):
     # @functools.lru_cache(maxsize=None)
     def get_depth_from_path(self, path):
         return cv2.imread(path, cv2.IMREAD_UNCHANGED).astype(np.float32) / 1000. # mm -> m
-    
+
     def get_image(self, n):
         img_path = os.path.join(self.root_dir, self.imgs[n])
         return self.get_image_from_path(img_path)
-    
+
     def get_annotated_image(self, n, text=True):
         sample = self.__getitem__(n)
-        
+
         img, sent, grasps, bbox = sample['img'], sample['sentence'], sample['grasp_rects'], sample['bbox']
         if isinstance(img, torch.FloatTensor):
             img = img.permute(1,2,0)
@@ -967,7 +1045,7 @@ class OCIDVLGDataset(Dataset):
             tmp = cv2.line(tmp, ptD, ptC, (0,0,0xff), 2)
             tmp = cv2.line(tmp, ptB, ptC, (0xff,0,0), 2)
             tmp = cv2.line(tmp, ptA, ptD, (0xff,0,0), 2)
-        
+
         tmp = cv2.rectangle(tmp, (bbox[0],bbox[1]), (bbox[2],bbox[3]), (0,255,0), 2)
         if text:
             tmp = cv2.putText(tmp, sent, (0,10), cv2.FONT_HERSHEY_PLAIN, 1, (0,0,0), 2, cv2.LINE_AA)
@@ -1037,7 +1115,7 @@ class OCIDVLGDataset(Dataset):
         plt.tight_layout()
         print("save")
         plt.savefig(os.path.join(save_path, f"sample_{n}.png"))
-    
+
     @staticmethod
     def collate_fn(batch):
         collated = {
@@ -1061,20 +1139,25 @@ class OCIDVLGDataset(Dataset):
             "ori_size": [x["ori_size"] for x in batch],
             "img_path": [x["img_path"] for x in batch]
         }
+        for key in ("off", "off_w"):
+            if all(key in sample["grasp_masks"] for sample in batch):
+                collated["grasp_masks"][key] = torch.stack(
+                    [torch.from_numpy(sample["grasp_masks"][key]).float() for sample in batch]
+                )
         if "depth" in batch[0]:
             collated["depth"] = torch.stack(
                 [torch.from_numpy(x["depth"]) for x in batch]
             )
         return collated
-            
-        
+
+
 
 
 class OCIDGraspDataset(Dataset):
-    
+
     """ OCID-Grasp dataset """
 
-    def __init__(self, 
+    def __init__(self,
                  cfg,
                  split):
         self.cfg = cfg
@@ -1091,7 +1174,7 @@ class OCIDGraspDataset(Dataset):
         aug_mode = "train" if self.split == "training_0" else "test"
         self.data_augmentor = DataAugmentor(cfg, mode=aug_mode)
         # self.data_augmentor = DataAugmentor(cfg)
-        
+
         self._load_dicts()
         self.num_classes = len(cnames)
 
@@ -1105,33 +1188,33 @@ class OCIDGraspDataset(Dataset):
         from .OCID_sub_class_dict import cnames, colors, subnames, sub_to_class
         cnames_inv = {int(v):k for k,v in cnames.items()}
         subnames_inv = {v:k for k,v in subnames.items()}
-        self.class_names = cnames 
+        self.class_names = cnames
         self.idx_to_class = cnames_inv
         self.class_instance_names = subnames
         self.idx_to_class_instance = subnames_inv
         self.instance_idx_to_class_idx = sub_to_class
         os.chdir(cwd)
 
-    
+
     def _get_rgb_image(self, scene_id, img_f, data_dict):
         img_path = os.path.join(self.root_dir, scene_id, "rgb", img_f)
         img = cv2.imread(img_path, cv2.COLOR_BGR2RGB)
         data_dict["rgb"] = img
 
-    
+
     def _get_depth_image(self, scene_id, img_f, data_dict):
         depth_path = os.path.join(self.root_dir, scene_id, "depth", img_f)
         depth = cv2.imread(depth_path, cv2.IMREAD_UNCHANGED) / float(self.depth_factor)
         depth = 1 - (depth / np.max(depth))
         data_dict["depth"] = depth
-        
-    
+
+
     def _get_sem_mask(self, scene_id, img_f, data_dict):
         sem_mask = cv2.imread(os.path.join(self.root_dir, scene_id, "seg_mask_labeled_combi", img_f), cv2.IMREAD_UNCHANGED)
         data_dict["sem_mask"] = sem_mask
         return sem_mask
 
-    
+
     def _get_ins_mask(self, scene_id, img_f, data_dict):
         # Load semantic mask first if the with_sem_masks set to False
         if "sem_mask" not in data_dict.keys():
@@ -1147,7 +1230,7 @@ class OCIDGraspDataset(Dataset):
         props = regionprops(sem_mask)
         for prop in props:
             cls_id = prop.label
-            
+
             # Get binary mask for each semantic class
             bin_mask = (sem_mask == cls_id).astype('int8')
             # Get corresponding semantic mask (may contains multiple instances)
@@ -1160,7 +1243,7 @@ class OCIDGraspDataset(Dataset):
                 bboxes.append([ins.bbox[1], ins.bbox[0], ins.bbox[3], ins.bbox[2], cls_id])
                 mask = (cls_ins_mask == ins.label).astype('int8').astype('float32')
                 ins_masks.append(mask)
-        
+
         bboxes = np.array(bboxes).astype('float32')
         labels = np.array(labels)
         ins_masks  = np.array(ins_masks)
@@ -1170,7 +1253,7 @@ class OCIDGraspDataset(Dataset):
         data_dict["ins_masks"] = ins_masks
 
 
-    
+
     def _get_per_cls_grasp_rects(self, scene_id, img_f, data_dict):
         anno_path = os.path.join(self.root_dir, scene_id, "Annotations_per_class", img_f[:-4])
         grasps_list = []
@@ -1194,7 +1277,7 @@ class OCIDGraspDataset(Dataset):
                         center_y = (p1[1] + p3[1]) / 2
                         width  = np.sqrt((p1[0] - p4[0]) * (p1[0] - p4[0]) + (p1[1] - p4[1]) * (p1[1] - p4[1]))
                         height = np.sqrt((p1[0] - p2[0]) * (p1[0] - p2[0]) + (p1[1] - p2[1]) * (p1[1] - p2[1]))
-                        
+
                         # @NOTE
                         # Along x+ is 0 degree, increase by rotating anti-clockwise
                         # If you want to use opencv boxPoints & drawContours to visualize grasps
@@ -1259,7 +1342,7 @@ class OCIDGraspDataset(Dataset):
     def __len__(self):
         return len(self.meta)
 
-    
+
     def __getitem__(self, index):
         data_dict = {}
         scene_id, img_f = self.meta[index]
@@ -1280,8 +1363,8 @@ class OCIDGraspDataset(Dataset):
         if self.with_grasp_masks:
             self._get_per_cls_grasp_rects(scene_id, img_f, data_dict)
             self._get_grasp_mask(scene_id, img_f, data_dict)
-        
-        
+
+
         self.data_augmentor(data_dict)
 
         data_dict["grasp_masks"]["sin"] = np.sin(2 * data_dict["grasp_masks"]["ang"])
@@ -1315,7 +1398,7 @@ class OCIDGraspDataset(Dataset):
         # img = img / 255.
 
         num_ins = data_dict["bboxes"].shape[0]
-        
+
         fig = plt.figure(figsize=(25, 10))
 
         ax = fig.add_subplot(2, 4, 1)

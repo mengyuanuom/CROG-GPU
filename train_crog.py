@@ -22,7 +22,7 @@ from torch.optim.lr_scheduler import MultiStepLR
 import utils.config as config
 from utils.dataset import OCIDVLGDataset
 from engine.crog_engine import train_with_grasp, validate_with_grasp, validate_without_grasp
-from model import build_crog
+from model import build_model
 from utils.misc import (init_random_seed, set_random_seed, setup_logger,
                         worker_init_fn)
 from utils.npu import build_grad_scaler, device_count, empty_cache, set_device
@@ -113,7 +113,7 @@ def main_worker(local_rank, args):
     dist.barrier()
 
     # build model
-    model, param_list = build_crog(args)
+    model, param_list = build_model(args)
     if args.sync_bn:
         logger.warning(
             "SyncBatchNorm is disabled for the Ascend NPU training path. "
@@ -123,7 +123,7 @@ def main_worker(local_rank, args):
         args.sync_bn = False
     logger.info(model)
     logger.info(args)
-    
+
     # build optimizer & lr scheduler
     optimizer = torch.optim.Adam(param_list,
                                  lr=args.base_lr,
@@ -139,7 +139,7 @@ def main_worker(local_rank, args):
             amp_enabled,
             type(scaler).__name__,
         )
-    
+
     # # resume
     # best_IoU = 0.0
     # if args.resume:
@@ -164,9 +164,9 @@ def main_worker(local_rank, args):
     #         raise ValueError(
     #             "=> resume failed! no checkpoint found at '{}'. Please check args.resume again!"
     #             .format(args.resume))
-    
-    
-    
+
+
+
     model = model.to(args.device)
     model = nn.parallel.DistributedDataParallel(
         model,
@@ -193,20 +193,25 @@ def main_worker(local_rank, args):
     args.workers = int(
         (args.workers + args.world_size - 1) / args.world_size)
 
-        
+
+    architecture = str(getattr(args, "architecture", "crog")).lower()
+    needs_offset = architecture == "drogoff"
     train_data = OCIDVLGDataset(root_dir=args.root_path,
                             input_size=args.input_size,
                             word_length=args.word_len,
                             split='train',
                             with_depth=bool(getattr(args, "with_depth", False)),
-                            version=args.version)
+                            version=args.version,
+                            with_grasp_offset=needs_offset,
+                            offset_r=float(getattr(args, "offset_r", 20.0)),
+                            offset_sigma=getattr(args, "offset_sigma", None))
     val_data = OCIDVLGDataset(root_dir=args.root_path,
                             input_size=args.input_size,
                             word_length=args.word_len,
                             split='val',
                             with_depth=bool(getattr(args, "with_depth", False)),
                             version=args.version)
-        
+
 
     # build dataloader
     init_fn = partial(worker_init_fn,
@@ -253,7 +258,7 @@ def main_worker(local_rank, args):
             scheduler.load_state_dict(checkpoint['scheduler'])
             logger.info("=> loaded checkpoint '{}' (epoch {})".format(
                 args.resume, checkpoint['epoch']))
-            
+
             del checkpoint
             empty_cache()
         else:
@@ -305,7 +310,7 @@ def main_worker(local_rank, args):
             if improved_iou:
                 bestname = os.path.join(args.output_dir, "best_iou_model.pth")
                 shutil.copyfile(lastname, bestname)
-            
+
             if improved_j:
                 bestname = os.path.join(args.output_dir, "best_jindex_model.pth")
                 shutil.copyfile(lastname, bestname)

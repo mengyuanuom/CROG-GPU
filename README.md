@@ -108,6 +108,49 @@ ASCEND_RT_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 torchrun \
 
 
 
+## DROG and DROG-OFF with the CROG scoring protocol
+
+`config/OCID-VLG/drog.yaml` and `config/OCID-VLG/drogoff.yaml` select the
+DINOv2/CLIP-B16 models. DROG-OFF keeps its offset post-processing, while all
+resulting grasp rectangles are judged by CROG's scoring functions. Put these
+pretrained files under `pretrain/`:
+
+- `ViT-B-16.pt`
+- `dinov2_vitb14_reg4_pretrain.pth`
+
+Train DROG on eight NPUs:
+
+```bash
+bash tools/train_drog_8npu.sh
+```
+
+Train DROG-OFF with the same launcher:
+
+```bash
+CONFIG=config/OCID-VLG/drogoff.yaml bash tools/train_drog_8npu.sh
+```
+
+Evaluate a DROG checkpoint on one NPU:
+
+```bash
+ASCEND_RT_VISIBLE_DEVICES=0 python3 test_crog.py \
+  --config config/OCID-VLG/drog.yaml \
+  --opts TRAIN.resume exp/OCID-VLG/drog_ocid_vlg_8npu/best_jindex_model.pth
+```
+
+Use `config/OCID-VLG/drogoff.yaml` and the matching checkpoint for DROG-OFF.
+Eight-NPU evaluation uses the same `torchrun --nproc_per_node=8 test_crog.py`
+form documented above for CROG.
+
+This comparison intentionally preserves every historical CROG evaluation
+operation: bicubic resizing with `align_corners=True`, OpenCV cubic inverse
+warping, the 0.35 segmentation threshold, quality peaks at 0.4 with distance
+2, top-1/top-5 detection, the fixed 480x640 raster canvas, predicted grasp
+height 20, ground-truth height overwritten to 20, ground-truth width clipped
+to 100, the original periodic-angle test, and strict `IoU > 0.25`. DROG-OFF's
+offset head is supervised during training and refines the predicted center (plus
+angle/width resampling) before the resulting rectangle is passed to the unchanged
+CROG Jacquard scorer.
 The weight can also be downloaded separately:
 
 ```bash
@@ -141,8 +184,8 @@ If you find our work useful in your research, please consider citing:
 
 @inproceedings{10161149,
   author={Xu, Yucheng and Kasaei, Mohammadreza and Kasaei, Hamidreza and Li, Zhibin},
-  booktitle={2023 IEEE International Conference on Robotics and Automation (ICRA)}, 
-  title={Instance-wise Grasp Synthesis for Robotic Grasping}, 
+  booktitle={2023 IEEE International Conference on Robotics and Automation (ICRA)},
+  title={Instance-wise Grasp Synthesis for Robotic Grasping},
   year={2023},
   volume={},
   number={},

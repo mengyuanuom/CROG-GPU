@@ -10,7 +10,7 @@ from loguru import logger
 
 import utils.config as config
 from engine.crog_engine import inference_with_grasp
-from model import build_crog
+from model import build_model
 from utils.dataset import OCIDVLGDataset
 from utils.misc import setup_logger
 from utils.npu import set_device
@@ -99,10 +99,10 @@ def main():
                                               collate_fn=OCIDVLGDataset.collate_fn)
 
     # build model
-    model, _ = build_crog(args)
+    model, _ = build_model(args)
     model = model.to(args.device)
     logger.info(model)
-    
+
     save_path = os.path.join("./results", args.exp_name)
     os.makedirs(save_path, exist_ok=True)
 
