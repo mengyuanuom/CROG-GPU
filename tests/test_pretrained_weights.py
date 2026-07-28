@@ -1,5 +1,6 @@
 import hashlib
 import io
+import ssl
 import subprocess
 import sys
 from pathlib import Path
@@ -84,6 +85,29 @@ class PretrainedWeightsTest(unittest.TestCase):
         for artifact in pretrained.ARTIFACTS.values():
             self.assertIn(artifact.filename, result.stdout)
             self.assertIn(artifact.url, result.stdout)
+
+
+    def test_insecure_mode_is_explicit_and_disables_verification(self):
+        with mock.patch.dict(pretrained.os.environ, {}, clear=True):
+            with self.assertWarns(RuntimeWarning):
+                context = pretrained._download_ssl_context(insecure=True)
+        self.assertFalse(context.check_hostname)
+        self.assertEqual(context.verify_mode, ssl.CERT_NONE)
+
+    def test_existing_weight_does_not_require_an_ssl_context(self):
+        artifact = pretrained.ARTIFACTS["dinov2-vitb14-reg4"]
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory) / artifact.filename
+            target.write_bytes(b"existing-weight")
+            with mock.patch.object(
+                pretrained,
+                "_download_ssl_context",
+                side_effect=AssertionError("SSL context should not be created"),
+            ):
+                self.assertEqual(
+                    pretrained.ensure_pretrained(target, "dinov2-vitb14-reg4"),
+                    target,
+                )
 
 
     def test_models_and_launchers_use_automatic_downloads(self):

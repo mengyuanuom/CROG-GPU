@@ -6,9 +6,11 @@ from dataclasses import dataclass
 import hashlib
 import os
 from pathlib import Path
+import ssl
 import time
 from typing import Optional
 import urllib.request
+import warnings
 
 
 @dataclass(frozen=True)
@@ -108,7 +110,50 @@ def _acquire_lock(lock_path: Path, target: Path, artifact: PretrainedArtifact, t
             time.sleep(1.0)
 
 
-def ensure_pretrained(path, artifact_key: Optional[str] = None, *, lock_timeout=1800.0) -> Path:
+def _download_ssl_context(ca_bundle=None, insecure=None):
+    if insecure is None:
+        insecure = os.environ.get("CROG_NPU_INSECURE_DOWNLOAD", "").lower() in {
+            "1", "true", "yes", "on"
+        }
+    if ca_bundle is None:
+        for variable in (
+            "CROG_NPU_CA_BUNDLE",
+            "SSL_CERT_FILE",
+            "REQUESTS_CA_BUNDLE",
+            "CURL_CA_BUNDLE",
+        ):
+            if os.environ.get(variable):
+                ca_bundle = os.environ[variable]
+                break
+    if insecure and ca_bundle:
+        raise ValueError("Use either a CA bundle or insecure mode, not both")
+    if insecure:
+        warnings.warn(
+            "TLS certificate verification is disabled for weight downloads. "
+            "Use only on a trusted network and prefer CROG_NPU_CA_BUNDLE.",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+        context = ssl.create_default_context()
+        context.check_hostname = False
+        context.verify_mode = ssl.CERT_NONE
+        return context
+    if ca_bundle is not None:
+        bundle = Path(ca_bundle).expanduser()
+        if not bundle.is_file():
+            raise FileNotFoundError(f"CA bundle not found: {bundle}")
+        return ssl.create_default_context(cafile=str(bundle))
+    return ssl.create_default_context()
+
+
+def ensure_pretrained(
+    path,
+    artifact_key: Optional[str] = None,
+    *,
+    lock_timeout=1800.0,
+    ca_bundle=None,
+    insecure=None,
+) -> Path:
     """Return a valid checkpoint, downloading the official file only if absent."""
     target = Path(path).expanduser()
     artifact_key = artifact_key or _artifact_key_for_path(target)
@@ -141,6 +186,7 @@ def ensure_pretrained(path, artifact_key: Optional[str] = None, *, lock_timeout=
             return target
 
         temporary = target.with_name(f"{target.name}.part.{os.getpid()}")
+        ssl_context = _download_ssl_context(ca_bundle, insecure)
         request = urllib.request.Request(
             artifact.url,
             headers={"User-Agent": "CROG-NPU-weight-downloader/1.0"},
@@ -152,7 +198,9 @@ def ensure_pretrained(path, artifact_key: Optional[str] = None, *, lock_timeout=
             flush=True,
         )
         try:
-            with urllib.request.urlopen(request, timeout=60) as response:
+            with urllib.request.urlopen(
+                request, timeout=60, context=ssl_context
+            ) as response:
                 with temporary.open("wb") as stream:
                     while True:
                         block = response.read(1024 * 1024)
@@ -166,9 +214,22 @@ def ensure_pretrained(path, artifact_key: Optional[str] = None, *, lock_timeout=
             os.replace(temporary, target)
         except Exception as exc:
             temporary.unlink(missing_ok=True)
+            certificate_help = ""
+            reason = getattr(exc, "reason", exc)
+            if (
+                isinstance(reason, ssl.SSLCertVerificationError)
+                or "CERTIFICATE_VERIFY_FAILED" in str(exc)
+            ):
+                certificate_help = (
+                    "\nTLS certificate verification failed. Preferred fix:\n"
+                    "  export CROG_NPU_CA_BUNDLE=/path/to/company-ca.pem\n"
+                    "Emergency fallback on a trusted network only:\n"
+                    "  export CROG_NPU_INSECURE_DOWNLOAD=1"
+                )
             raise RuntimeError(
                 f"Could not download {artifact.name} from:\n{artifact.url}\n"
                 f"Download it manually to {target}. Original error: {exc}"
+                f"{certificate_help}"
             ) from exc
         print(f"[weights] ready: {target}", flush=True)
         return target

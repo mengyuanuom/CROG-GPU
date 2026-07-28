@@ -25,6 +25,17 @@ def main() -> int:
         type=Path,
         help="Exact destination; valid only when downloading one artifact.",
     )
+    parser.add_argument(
+        "--ca-bundle",
+        type=Path,
+        help="PEM CA bundle for an HTTPS-inspecting proxy.",
+    )
+    parser.add_argument(
+        "--insecure",
+        action="store_true",
+        default=None,
+        help="Disable TLS verification (trusted networks only).",
+    )
     args = parser.parse_args()
 
     unknown = sorted(set(args.artifacts) - set(ARTIFACTS))
@@ -45,7 +56,12 @@ def main() -> int:
     for key in names:
         artifact = ARTIFACTS[key]
         target = args.output or (args.output_dir / artifact.filename)
-        ensure_pretrained(target, key)
+        ensure_pretrained(
+            target,
+            key,
+            ca_bundle=args.ca_bundle,
+            insecure=args.insecure,
+        )
     return 0
 
 

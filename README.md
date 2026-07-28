@@ -179,6 +179,29 @@ files are additionally checksum-verified. Downloads use a lock and an atomic ren
 so multi-process evaluation cannot consume a partial file. On failure, the error
 prints the same official URL for manual download.
 
+### HTTPS certificate errors
+
+If the server uses an HTTPS-inspecting proxy, point the downloader at the
+organization's PEM CA certificate:
+
+```bash
+export CROG_NPU_CA_BUNDLE=/path/to/company-ca.pem
+CONFIG=config/OCID-VLG/drogoff.yaml bash tools/train_drog_8npu.sh
+```
+
+The downloader also recognizes `SSL_CERT_FILE`, `REQUESTS_CA_BUNDLE`, and
+`CURL_CA_BUNDLE`. If the CA certificate is unavailable, the explicit emergency
+fallback below disables TLS verification and must only be used on a trusted
+network:
+
+```bash
+CROG_NPU_INSECURE_DOWNLOAD=1 CONFIG=config/OCID-VLG/drogoff.yaml \
+  bash tools/train_drog_8npu.sh
+```
+
+For a one-off manual download, use `--ca-bundle FILE` or `--insecure`.
+
+
 Custom locations can be supplied without editing files:
 
 ```bash
