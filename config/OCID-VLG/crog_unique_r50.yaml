@@ -28,7 +28,7 @@ TRAIN:
   epochs: 300
   milestones: [50, 100, 150]
   start_epoch: 0
-  batch_size: 24  # batch size for training
+  batch_size: 32  # global train batch size; 4 samples per process on 8 NPUs
   batch_size_val: 24  # batch size for validation during training, memory and speed tradeoff
   base_lr: 0.0001
   lr_decay: 0.1

@@ -20,7 +20,7 @@ class OfficialCROGNPUConfigTest(unittest.TestCase):
         expected_lines = (
             r"^\s*epochs:\s*50\s*$",
             r"^\s*milestones:\s*\[35\]\s*$",
-            r"^\s*batch_size:\s*24\b",
+            r"^\s*batch_size:\s*32\b",
             r"^\s*batch_size_val:\s*24\b",
             r"^\s*base_lr:\s*0\.0001\b",
             r"^\s*lr_multi:\s*0\.1\b",
@@ -238,8 +238,8 @@ class OfficialCROGNPUConfigTest(unittest.TestCase):
 
     def test_drog_configs_match_the_requested_global_schedule(self):
         expected_optimization = {
-            "drog.yaml": ("drog", 24, "0.0001"),
-            "drogoff.yaml": ("drogoff", 128, "0.0004"),
+            "drog.yaml": ("drog", 32, "0.0001"),
+            "drogoff.yaml": ("drogoff", 32, "0.0004"),
         }
         for name, (architecture, batch_size, base_lr) in expected_optimization.items():
             source = (ROOT / "config" / "OCID-VLG" / name).read_text(encoding="utf-8")
