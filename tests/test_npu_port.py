@@ -109,16 +109,24 @@ class OfficialCROGNPUConfigTest(unittest.TestCase):
             2,
         )
 
+    def test_launcher_requires_one_positional_config(self):
+        source = (
+            ROOT / "tools" / "train_8npu.sh"
+        ).read_text(encoding="utf-8")
+        self.assertIn('if [[ "$#" -ne 1 ]]', source)
+        self.assertIn('CONFIG="$1"', source)
+        self.assertNotIn('CONFIG="${CONFIG:-', source)
+
     def test_launcher_reads_amp_only_from_yaml(self):
         source = (
-            ROOT / "tools" / "train_crog_8npu.sh"
+            ROOT / "tools" / "train_8npu.sh"
         ).read_text(encoding="utf-8")
         self.assertNotIn('AMP=', source)
         self.assertNotIn('TRAIN.amp', source)
 
     def test_launcher_and_worker_bind_all_eight_npus(self):
         launcher = (
-            ROOT / "tools" / "train_crog_8npu.sh"
+            ROOT / "tools" / "train_8npu.sh"
         ).read_text(encoding="utf-8")
         trainer = (ROOT / "train_crog.py").read_text(encoding="utf-8")
         self.assertIn("0,1,2,3,4,5,6,7", launcher)
@@ -132,7 +140,7 @@ class OfficialCROGNPUConfigTest(unittest.TestCase):
     def test_fp32_path_does_not_construct_an_npu_grad_scaler(self):
         runtime = (ROOT / "utils" / "npu.py").read_text(encoding="utf-8")
         launcher = (
-            ROOT / "tools" / "train_crog_8npu.sh"
+            ROOT / "tools" / "train_8npu.sh"
         ).read_text(encoding="utf-8")
         self.assertIn("class NoOpGradScaler:", runtime)
         self.assertIn("if not enabled:\n        return NoOpGradScaler()", runtime)

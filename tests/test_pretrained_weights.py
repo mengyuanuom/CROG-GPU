@@ -113,7 +113,7 @@ class PretrainedWeightsTest(unittest.TestCase):
     def test_models_and_launchers_use_automatic_downloads(self):
         crog = (ROOT / "model" / "crog.py").read_text(encoding="utf-8")
         drog = (ROOT / "model" / "drog.py").read_text(encoding="utf-8")
-        launcher = (ROOT / "tools" / "train_drog_8npu.sh").read_text(
+        launcher = (ROOT / "tools" / "train_8npu.sh").read_text(
             encoding="utf-8"
         )
         self.assertIn('ensure_pretrained(cfg.clip_pretrain, "clip-rn50")', crog)

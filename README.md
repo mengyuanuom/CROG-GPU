@@ -72,14 +72,12 @@ it is absent and verifies its SHA-256 before training. Run the original CROG
 experiment on eight NPUs with:
 
 ```bash
-bash tools/train_crog_8npu.sh
+bash tools/train_8npu.sh config/OCID-VLG/crog_multiple_r50.yaml
 ```
 
-The YAML fixes `TRAIN.amp: False`, and the launcher does not override it:
-
-```bash
-bash tools/train_crog_8npu.sh
-```
+Every training profile uses the same launcher and passes exactly one YAML path
+as its positional argument. The YAML fixes `TRAIN.amp: False`, and the launcher
+does not override it.
 
 The FP32 path bypasses both autocast and `torch_npu.npu.amp.GradScaler`; it
 uses ordinary `loss.backward()` and `optimizer.step()` so a disabled scaler
@@ -120,13 +118,13 @@ before starting `torchrun`. Direct model construction performs the same check.
 Train DROG on eight NPUs:
 
 ```bash
-bash tools/train_drog_8npu.sh
+bash tools/train_8npu.sh config/OCID-VLG/drog.yaml
 ```
 
 Train DROG-OFF with the same launcher:
 
 ```bash
-CONFIG=config/OCID-VLG/drogoff.yaml bash tools/train_drog_8npu.sh
+bash tools/train_8npu.sh config/OCID-VLG/drogoff.yaml
 ```
 
 Evaluate a DROG checkpoint on one NPU:
@@ -186,7 +184,7 @@ organization's PEM CA certificate:
 
 ```bash
 export CROG_NPU_CA_BUNDLE=/path/to/company-ca.pem
-CONFIG=config/OCID-VLG/drogoff.yaml bash tools/train_drog_8npu.sh
+bash tools/train_8npu.sh config/OCID-VLG/drogoff.yaml
 ```
 
 The downloader also recognizes `SSL_CERT_FILE`, `REQUESTS_CA_BUNDLE`, and
@@ -195,8 +193,8 @@ fallback below disables TLS verification and must only be used on a trusted
 network:
 
 ```bash
-CROG_NPU_INSECURE_DOWNLOAD=1 CONFIG=config/OCID-VLG/drogoff.yaml \
-  bash tools/train_drog_8npu.sh
+CROG_NPU_INSECURE_DOWNLOAD=1 \
+  bash tools/train_8npu.sh config/OCID-VLG/drogoff.yaml
 ```
 
 For a one-off manual download, use `--ca-bundle FILE` or `--insecure`.
@@ -206,7 +204,7 @@ Custom locations can be supplied without editing files:
 
 ```bash
 DATA_ROOT=/data/OCID-VLG CLIP_WEIGHT=/data/RN50.pt \
-  bash tools/train_crog_8npu.sh
+  bash tools/train_8npu.sh config/OCID-VLG/crog_multiple_r50.yaml
 ```
 
 
