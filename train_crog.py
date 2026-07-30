@@ -26,6 +26,7 @@ from engine.crog_engine import train_with_grasp, validate_with_grasp, validate_w
 from model import build_model
 from utils.misc import (init_random_seed, set_random_seed, setup_logger,
                         worker_init_fn)
+from utils.lr_scheduler import rebuild_multistep_scheduler
 from utils.npu import build_grad_scaler, device_count, empty_cache, set_device
 
 warnings.filterwarnings("ignore")
@@ -172,6 +173,7 @@ def main_worker(local_rank, args):
     scheduler = MultiStepLR(optimizer,
                             milestones=args.milestones,
                             gamma=args.lr_decay)
+    configured_base_lrs = tuple(scheduler.base_lrs)
     amp_enabled = bool(getattr(args, "amp", True))
     scaler = build_grad_scaler(enabled=amp_enabled)
     if args.rank == 0:
@@ -180,33 +182,6 @@ def main_worker(local_rank, args):
             amp_enabled,
             type(scaler).__name__,
         )
-
-    # # resume
-    # best_IoU = 0.0
-    # if args.resume:
-    #     if os.path.isfile(args.resume):
-    #         logger.info("=> loading checkpoint '{}'".format(args.resume))
-    #         checkpoint = torch.load(
-    #             args.resume, map_location=torch.device('cpu'))
-    #         args.start_epoch = checkpoint['epoch']
-    #         best_IoU = checkpoint["best_iou"]
-    #         state_dict = checkpoint['state_dict']
-    #         new_state_dict = OrderedDict()
-    #         for k, v in state_dict.items():
-    #             name = k[7:] # remove `module.`
-    #             new_state_dict[name] = v
-    #         # load params
-    #         model.load_state_dict(new_state_dict)
-    #         optimizer.load_state_dict(checkpoint['optimizer'])
-    #         scheduler.load_state_dict(checkpoint['scheduler'])
-    #         logger.info("=> loaded checkpoint '{}' (epoch {})".format(
-    #             args.resume, checkpoint['epoch']))
-    #     else:
-    #         raise ValueError(
-    #             "=> resume failed! no checkpoint found at '{}'. Please check args.resume again!"
-    #             .format(args.resume))
-
-
 
     model = model.to(args.device)
     model = nn.parallel.DistributedDataParallel(
@@ -310,7 +285,21 @@ def main_worker(local_rank, args):
                 for key, value in state.items():
                     if torch.is_tensor(value):
                         state[key] = value.to(args.device)
-            scheduler.load_state_dict(checkpoint['scheduler'])
+            scheduler = rebuild_multistep_scheduler(
+                optimizer=optimizer,
+                base_lrs=configured_base_lrs,
+                milestones=args.milestones,
+                gamma=args.lr_decay,
+                completed_epochs=args.start_epoch,
+            )
+            logger.info(
+                "=> rebuilt LR schedule from current config: "
+                "milestones={}, gamma={}, completed_epochs={}, lr={}",
+                args.milestones,
+                args.lr_decay,
+                args.start_epoch,
+                [group["lr"] for group in optimizer.param_groups],
+            )
             logger.info("=> loaded checkpoint '{}' (epoch {})".format(
                 args.resume, checkpoint['epoch']))
 
