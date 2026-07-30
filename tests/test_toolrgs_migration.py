@@ -108,6 +108,53 @@ class ToolRGSModelMigrationTest(unittest.TestCase):
             source,
         )
 
+    def test_maplegrasp_matches_the_official_two_stage_contract(self):
+        source = (
+            ROOT / "model" / "toolrgs" / "maplegrasp.py"
+        ).read_text(encoding="utf-8")
+        expected = (
+            "https://github.com/vineet2104/MapleGrasp",
+            "c1b1f48e7ff24caaf39daa127d47d9469b93c7a1",
+            "self.vis = nn.Sequential",
+            "self.vis_mask = nn.Conv2d",
+            "self.vis_grasp = nn.Conv2d",
+            "self.txt = nn.Linear",
+            "torch.sigmoid(mask_out.detach()) > 0.35",
+            "F.binary_cross_entropy_with_logits",
+            "F.smooth_l1_loss",
+        )
+        for token in expected:
+            with self.subTest(token=token):
+                self.assertIn(token, source)
+        self.assertNotIn("maple_stage", source)
+        self.assertNotIn(".cuda(", source)
+
+    def test_maplegrasp_stage_configs_are_exclusive_and_linked(self):
+        stage1 = (
+            ROOT / "config" / "OCID-VLG" / "maplegrasp_stage1.yaml"
+        ).read_text(encoding="utf-8")
+        stage2 = (
+            ROOT / "config" / "OCID-VLG" / "maplegrasp_stage2.yaml"
+        ).read_text(encoding="utf-8")
+        self.assertRegex(stage1, r"(?m)^\s*stage1:\s*True\s*$")
+        self.assertRegex(stage1, r"(?m)^\s*stage2:\s*False\s*$")
+        self.assertRegex(stage2, r"(?m)^\s*stage1:\s*False\s*$")
+        self.assertRegex(stage2, r"(?m)^\s*stage2:\s*True\s*$")
+        self.assertIn(
+            "weight: exp/ocid_vlg/maplegrasp_stage1_ocid_vlg_8npu/"
+            "best_iou_model.pth",
+            stage2,
+        )
+
+    def test_maplegrasp_runner_separates_weight_initialization_and_resume(self):
+        source = (ROOT / "train_crog.py").read_text(encoding="utf-8")
+        self.assertIn("def _load_maplegrasp_stage1", source)
+        self.assertIn("model.load_state_dict(state_dict, strict=False)", source)
+        self.assertIn('"module.proj.vis_grasp.weight"', source)
+        self.assertIn(
+            'getattr(model.module, "segmentation_only", False)', source
+        )
+        self.assertIn("model.load_state_dict(checkpoint['state_dict'])", source)
 
 if __name__ == "__main__":
     unittest.main()

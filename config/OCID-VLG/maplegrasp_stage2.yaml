@@ -28,11 +28,11 @@ TRAIN:
   intermediate: False
   use_contrastive: True
   use_pretrained_clip: True
-  # Official MapleGrasp Stage 1: segmentation only.
-  stage1: True
-  stage2: False
+  # Official MapleGrasp Stage 2: initialize Stage-1 weights, then add grasp head.
+  stage1: False
+  stage2: True
   use_gt_obj_masks: False
-  use_grasp_masks: False
+  use_grasp_masks: True
   workers: 4
   workers_val: 2
   epochs: 50
@@ -43,15 +43,15 @@ TRAIN:
   base_lr: 0.0001
   lr_decay: 0.1
   lr_multi: 0.1
+  weight: exp/ocid_vlg/maplegrasp_stage1_ocid_vlg_8npu/best_iou_model.pth
   weight_decay: 0.0
   max_norm: 0.0
   manual_seed: 0
   print_freq: 100
-  exp_name: maplegrasp_stage1_ocid_vlg_8npu
+  exp_name: maplegrasp_stage2_ocid_vlg_8npu
   output_folder: exp/ocid_vlg
   save_freq: 1
   val_freq: 1
-  weight:
   resume:
   evaluate: True
 Distributed:

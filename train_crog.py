@@ -58,6 +58,58 @@ def _replace_epoch_alias(source, output_dir, prefix, epoch):
     return target
 
 
+def _normalize_checkpoint_keys(state_dict, model):
+    """Match plain and DDP checkpoint key prefixes without changing names."""
+    target_keys = tuple(model.state_dict().keys())
+    source_keys = tuple(state_dict.keys())
+    if not source_keys or not target_keys:
+        return state_dict
+    source_ddp = source_keys[0].startswith("module.")
+    target_ddp = target_keys[0].startswith("module.")
+    if source_ddp == target_ddp:
+        return state_dict
+    if source_ddp:
+        return {
+            key.removeprefix("module."): value
+            for key, value in state_dict.items()
+        }
+    return {f"module.{key}": value for key, value in state_dict.items()}
+
+
+def _load_maplegrasp_stage1(model, checkpoint_path):
+    """Initialize official Stage 2 from a completed Stage-1 checkpoint."""
+    if not os.path.isfile(checkpoint_path):
+        raise ValueError(
+            "MapleGrasp Stage-1 checkpoint not found at "
+            f"{checkpoint_path!r}. Train the Stage-1 config first or update "
+            "TRAIN.weight in the Stage-2 YAML."
+        )
+    checkpoint = torch.load(checkpoint_path, map_location="cpu")
+    state_dict = checkpoint.get("state_dict", checkpoint)
+    state_dict = _normalize_checkpoint_keys(state_dict, model)
+    incompatible = model.load_state_dict(state_dict, strict=False)
+    allowed_missing = {
+        "module.proj.vis_grasp.weight",
+        "module.proj.vis_grasp.bias",
+        "proj.vis_grasp.weight",
+        "proj.vis_grasp.bias",
+    }
+    unexpected_missing = set(incompatible.missing_keys) - allowed_missing
+    if unexpected_missing or incompatible.unexpected_keys:
+        raise RuntimeError(
+            "Stage-1 checkpoint is not compatible with official MapleGrasp "
+            f"Stage 2; missing={sorted(unexpected_missing)}, "
+            f"unexpected={sorted(incompatible.unexpected_keys)}"
+        )
+    logger.info(
+        "=> initialized MapleGrasp Stage 2 from Stage-1 checkpoint '{}' "
+        "(new grasp head: {})",
+        checkpoint_path,
+        sorted(incompatible.missing_keys),
+    )
+    del checkpoint
+    empty_cache()
+
 def get_parser():
     parser = argparse.ArgumentParser(
         description='Pytorch Referring Expression Segmentation')
@@ -190,6 +242,21 @@ def main_worker(local_rank, args):
         output_device=args.npu,
         find_unused_parameters=True,
     )
+
+    unwrapped_model = model.module
+    maplegrasp_stage = getattr(unwrapped_model, "maplegrasp_stage", None)
+    if args.weight:
+        if args.resume:
+            raise ValueError(
+                "TRAIN.weight initializes MapleGrasp Stage 2 from Stage 1, "
+                "whereas TRAIN.resume continues the same stage; set only one."
+            )
+        if maplegrasp_stage != 2:
+            raise ValueError(
+                "TRAIN.weight is reserved for MapleGrasp Stage-2 "
+                "initialization in this runner."
+            )
+        _load_maplegrasp_stage1(model, args.weight)
 
     # build dataset
     if args.batch_size % args.world_size:
@@ -341,7 +408,13 @@ def main_worker(local_rank, args):
         )
         iou, prec_dict, j_index = None, {}, []
         if do_eval:
-            if args.use_grasp_masks:
+            # Official MapleGrasp Stage 1 validates segmentation only; Stage 2
+            # validates segmentation plus grasp maps through the CROG scorer.
+            if bool(getattr(model.module, "segmentation_only", False)):
+                iou, prec_dict, j_index = validate_without_grasp(
+                    val_loader, model, epoch_log, args
+                )
+            elif args.use_grasp_masks:
                 iou, prec_dict, j_index = validate_with_grasp(
                     val_loader, model, epoch_log, args
                 )

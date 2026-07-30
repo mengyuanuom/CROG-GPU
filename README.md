@@ -207,6 +207,41 @@ DATA_ROOT=/data/OCID-VLG CLIP_WEIGHT=/data/RN50.pt \
   bash tools/train_8npu.sh config/OCID-VLG/crog_multiple_r50.yaml
 ```
 
+## MapleGrasp official two-stage NPU flow
+
+The MapleGrasp implementation follows the official
+[`vineet2104/MapleGrasp`](https://github.com/vineet2104/MapleGrasp) release at
+commit `c1b1f48e7ff24caaf39daa127d47d9469b93c7a1`. It preserves the official
+CLIP-RN50/FPN/transformer structure, projector parameter names, weighted BCE
+segmentation loss, four Smooth-L1 grasp losses, detached hard mask gate at
+`0.35`, and the required two-stage training order. NPU/HCCL execution, a
+shape-safe gate resize, and an Ascend-safe fused grouped convolution are the
+runtime adaptations.
+
+Train Stage 1 (referred-object segmentation) first:
+
+```bash
+bash tools/train_8npu.sh config/OCID-VLG/maplegrasp_stage1.yaml
+```
+
+Then train Stage 2. Its YAML uses `TRAIN.weight` to load Stage 1's
+`best_iou_model.pth` with `strict=False`; only the new `proj.vis_grasp` weights
+may be missing, matching the official flow:
+
+```bash
+bash tools/train_8npu.sh config/OCID-VLG/maplegrasp_stage2.yaml
+```
+
+`TRAIN.weight` is only for the Stage-1-to-Stage-2 transition. To continue an
+interrupted Stage 1 or Stage 2 run, leave `weight` empty and set `TRAIN.resume`
+to that same stage's `last_model.pth`. `config/OCID-VLG/maplegrasp.yaml` is a
+Stage-1-compatible alias.
+
+The upstream README names a MapleGrasp YAML that is not present in its released
+git tree. Consequently, this port keeps the CROG schedule used by the model
+base (50 epochs, milestone 35, Adam at `1e-4`) rather than inventing unpublished
+stage-specific hyperparameters.
+
 ## ToolRGSNPU model comparison under the CROG protocol
 
 The compatible RGB model implementations from ToolRGSNPU commit

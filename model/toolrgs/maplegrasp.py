@@ -1,85 +1,91 @@
-"""MapleGrasp mask-guided dense grasp model for ToolRGSNPU.
+"""Ascend NPU adaptation of the official two-stage MapleGrasp model.
 
-This implementation adapts the official CROG-based MapleGrasp head to the
-shared ToolRGS five-map contract. It keeps the detached predicted-mask gating
-between segmentation and grasp prediction, avoids fixed spatial sizes, and
-does not consume ground-truth masks during evaluation. Device placement is
-owned by the NPU runner; this module intentionally contains no CUDA calls.
+Source: https://github.com/vineet2104/MapleGrasp
+Reference commit: c1b1f48e7ff24caaf39daa127d47d9469b93c7a1
+
+The model structure, parameter names, losses, hard 0.35 mask gate, and
+stage-1/stage-2 contract follow the official release. The only model-level
+changes are device-neutral execution, shape-safe mask resizing, and a fused
+grouped convolution that avoids non-zero-storage-offset split views on Ascend.
 """
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from .crog import CROG
-from .crog_layers import conv_layer
+from .crog_clip import build_model
+from .crog_layers import FPN, TransformerDecoder, conv_layer
 
 
-class MapleGraspProjector(nn.Module):
-    """Dynamic text projector with mask-guided grasp feature pooling."""
+class MultiTaskProjectorPP(nn.Module):
+    """Official MapleGrasp projector with an Ascend-safe grasp path."""
 
     def __init__(
         self,
         word_dim=1024,
         in_dim=256,
         kernel_size=3,
-        mask_threshold=0.35,
-        hard_mask=True,
-        use_gt_masks=False,
+        stage1=False,
+        stage2=False,
+        use_gt_obj_masks=False,
     ):
         super().__init__()
+        if bool(stage1) == bool(stage2):
+            raise ValueError(
+                "MapleGrasp requires exactly one of stage1 or stage2 to be True"
+            )
         self.in_dim = int(in_dim)
         self.kernel_size = int(kernel_size)
-        self.mask_threshold = float(mask_threshold)
-        self.hard_mask = bool(hard_mask)
-        self.use_gt_masks = bool(use_gt_masks)
+        self.stage1 = bool(stage1)
+        self.stage2 = bool(stage2)
+        self.use_gt_obj_masks = bool(use_gt_obj_masks)
 
-        self.visual = nn.Sequential(
+        # Preserve the official names for Stage-1 -> Stage-2 loading.
+        self.vis = nn.Sequential(
             nn.Upsample(scale_factor=2, mode="bilinear", align_corners=False),
             conv_layer(in_dim * 2, in_dim * 2, 3, padding=1),
             nn.Upsample(scale_factor=2, mode="bilinear", align_corners=False),
             conv_layer(in_dim * 2, in_dim, 3, padding=1),
         )
-        self.mask_features = nn.Conv2d(in_dim, in_dim, 1)
-        self.grasp_features = nn.Conv2d(in_dim, in_dim * 4, 1)
-        output_dim = in_dim * kernel_size * kernel_size + 1
-        self.text_kernel = nn.Linear(word_dim, output_dim)
+        self.vis_mask = nn.Conv2d(in_dim, in_dim, 1)
+        if self.stage2:
+            self.vis_grasp = nn.Conv2d(in_dim, in_dim * 4, 1)
+        self.txt = nn.Linear(
+            word_dim, in_dim * kernel_size * kernel_size + 1
+        )
 
-    def _kernel(self, text_state):
-        batch_size = text_state.shape[0]
-        parameters = self.text_kernel(text_state)
-        weight, bias = parameters[:, :-1], parameters[:, -1]
-        weight = weight.reshape(
+    def _text_kernel(self, word):
+        batch_size = word.shape[0]
+        parameters = self.txt(word)
+        weight = parameters[:, :-1].reshape(
             batch_size,
             self.in_dim,
             self.kernel_size,
             self.kernel_size,
         )
-        return weight, bias
+        return weight, parameters[:, -1]
 
-    def _dynamic_conv(self, features, weight, bias):
+    def _dynamic_mask_conv(self, features, weight, bias):
         batch_size, channels, height, width = features.shape
-        features = features.reshape(1, batch_size * channels, height, width)
         output = F.conv2d(
-            features,
+            features.reshape(1, batch_size * channels, height, width),
             weight,
             bias=bias,
             padding=self.kernel_size // 2,
             groups=batch_size,
         )
-        return output.transpose(0, 1)
+        return output.transpose(0, 1).contiguous()
 
-    def _gate(self, segmentation, target_mask, output_size):
-        gate = torch.sigmoid(segmentation.detach())
-        if self.hard_mask:
-            gate = (gate > self.mask_threshold).to(gate.dtype)
-        if self.training and self.use_gt_masks and target_mask is not None:
-            gate = F.interpolate(
-                target_mask.detach().to(gate.dtype),
-                size=output_size,
-                mode="nearest",
-            )
-        elif gate.shape[-2:] != output_size:
+    def _grasp_gate(self, mask_out, gt_mask, output_size):
+        # The detach, sigmoid, hard threshold and 0.35 value follow upstream.
+        gate = (torch.sigmoid(mask_out.detach()) > 0.35).to(mask_out.dtype)
+        if self.use_gt_obj_masks:
+            if gt_mask is None:
+                raise ValueError(
+                    "use_gt_obj_masks=True requires a target object mask"
+                )
+            gate = gt_mask.detach().bool().to(dtype=mask_out.dtype)
+        if gate.shape[-2:] != output_size:
             gate = F.interpolate(
                 gate,
                 size=output_size,
@@ -88,48 +94,119 @@ class MapleGraspProjector(nn.Module):
             )
         return gate
 
-    def forward(self, features, text_state, target_mask=None):
-        visual = self.visual(features)
-        weight, bias = self._kernel(text_state)
-        segmentation = self._dynamic_conv(self.mask_features(visual), weight, bias)
+    def forward(self, x, word, mask=None):
+        x = self.vis(x)
+        mask_features = self.vis_mask(x)
+        batch_size, channels, height, width = mask_features.shape
+        weight, bias = self._text_kernel(word)
+        mask_out = self._dynamic_mask_conv(mask_features, weight, bias)
 
-        grasp_features = self.grasp_features(visual)
-        gate = self._gate(segmentation, target_mask, grasp_features.shape[-2:])
-        grasp_features = grasp_features * gate
-        grasp_features = torch.chunk(grasp_features, 4, dim=1)
-        grasp_outputs = tuple(
-            self._dynamic_conv(item, weight, bias) for item in grasp_features
+        if self.stage1:
+            return mask_out, None, None, None, None
+
+        gate = self._grasp_gate(mask_out, mask, (height, width))
+        grasp_features = self.vis_grasp(x).reshape(
+            batch_size, 4, channels, height, width
         )
-        return (segmentation, *grasp_outputs)
+        grasp_features = grasp_features * gate.unsqueeze(1)
+
+        # Equivalent to upstream's four convolutions, fused to avoid split
+        # views with non-zero storage offsets on Ascend.
+        grouped_input = grasp_features.reshape(
+            1, batch_size * 4 * channels, height, width
+        )
+        grouped_weight = (
+            weight[:, None]
+            .expand(-1, 4, -1, -1, -1)
+            .reshape(
+                batch_size * 4,
+                channels,
+                self.kernel_size,
+                self.kernel_size,
+            )
+            .contiguous()
+        )
+        grouped_bias = (
+            bias[:, None]
+            .expand(-1, 4)
+            .reshape(batch_size * 4)
+            .contiguous()
+        )
+        grasp_out = F.conv2d(
+            grouped_input,
+            grouped_weight,
+            bias=grouped_bias,
+            padding=self.kernel_size // 2,
+            groups=batch_size * 4,
+        ).reshape(batch_size, 4, height, width)
+        return (
+            mask_out,
+            grasp_out[:, 0:1].contiguous(),
+            grasp_out[:, 1:2].contiguous(),
+            grasp_out[:, 2:3].contiguous(),
+            grasp_out[:, 3:4].contiguous(),
+        )
 
 
-class MapleGrasp(CROG):
-    """CROG backbone plus MapleGrasp mask-guided grasp prediction."""
+class MapleGrasp(nn.Module):
+    """Official MapleGrasp two-stage model adapted to the NPU runner."""
 
     def __init__(self, cfg):
-        super().__init__(cfg)
-        if not self.use_grasp_masks:
-            raise ValueError("MapleGrasp requires use_grasp_masks=True")
-        self.maple_stage = str(getattr(cfg, "maple_stage", "joint")).lower()
-        if self.maple_stage not in {"segmentation", "grasp", "joint"}:
-            raise ValueError("maple_stage must be one of: segmentation, grasp, joint")
-        self.grasp_loss_weight = float(
-            getattr(cfg, "maple_grasp_loss_weight", 1.0)
-        )
-        self.proj = MapleGraspProjector(
-            word_dim=cfg.word_dim,
-            in_dim=cfg.vis_dim // 2,
-            kernel_size=3,
-            mask_threshold=float(getattr(cfg, "maple_mask_threshold", 0.35)),
-            hard_mask=bool(getattr(cfg, "maple_hard_mask", True)),
-            use_gt_masks=bool(getattr(cfg, "maple_use_gt_masks", False)),
+        super().__init__()
+        self.use_contrastive = bool(cfg.use_contrastive)
+        self.use_pretrained_clip = bool(cfg.use_pretrained_clip)
+        self.stage1 = bool(cfg.stage1)
+        self.stage2 = bool(cfg.stage2)
+        self.use_gt_obj_masks = bool(cfg.use_gt_obj_masks)
+        if self.stage1 == self.stage2:
+            raise ValueError(
+                "MapleGrasp requires exactly one of stage1 or stage2 to be True"
+            )
+
+        self.segmentation_only = self.stage1
+        self.use_grasp_masks = self.stage2
+        self.maplegrasp_stage = 1 if self.stage1 else 2
+
+        clip_model = torch.jit.load(
+            cfg.clip_pretrain, map_location="cpu"
+        ).eval()
+        print(f"Load pretrained CLIP: {self.use_pretrained_clip}")
+        self.backbone = build_model(
+            clip_model.state_dict(),
+            cfg.word_len,
+            self.use_pretrained_clip,
+        ).float()
+        self.neck = FPN(in_channels=cfg.fpn_in, out_channels=cfg.fpn_out)
+        if self.use_contrastive:
+            print("Use contrastive learning module")
+            self.decoder = TransformerDecoder(
+                num_layers=cfg.num_layers,
+                d_model=cfg.vis_dim,
+                nhead=cfg.num_head,
+                dim_ffn=cfg.dim_ffn,
+                dropout=cfg.dropout,
+                return_intermediate=cfg.intermediate,
+            )
+        else:
+            print("Disable contrastive learning module")
+        self.proj = MultiTaskProjectorPP(
+            cfg.word_dim,
+            cfg.vis_dim // 2,
+            3,
+            self.stage1,
+            self.stage2,
+            self.use_gt_obj_masks,
         )
 
     @staticmethod
-    def _resize_target(target, size):
+    def _resize_target(target, output_size):
         if target is None:
-            raise ValueError("MapleGrasp training requires all five dense targets")
-        return F.interpolate(target, size=size, mode="nearest").detach()
+            raise ValueError(
+                "MapleGrasp Stage 2 training requires all grasp targets"
+            )
+        return F.interpolate(
+            target, size=output_size, mode="nearest"
+        ).detach()
 
     def forward(
         self,
@@ -144,20 +221,54 @@ class MapleGrasp(CROG):
         grasp_off_weight=None,
     ):
         pad_mask = torch.zeros_like(word).masked_fill_(word == 0, 1).bool()
-        visual, word_features, text_state = self._encode(img, word)
+        visual = self.backbone.encode_image(img)
+        word_features, text_state = self.backbone.encode_text(word)
         features = self.neck(visual, text_state)
         batch_size, channels, height, width = features.shape
         if self.use_contrastive:
             features = self.decoder(features, word_features, pad_mask)
-            features = features.reshape(batch_size, channels, height, width)
+            features = features.reshape(
+                batch_size, channels, height, width
+            )
 
-        outputs = self.proj(features, text_state, target_mask=mask)
+        outputs = self.proj(features, text_state, mask)
         if mask is None:
             return outputs
 
-        output_size = outputs[0].shape[-2:]
+        if self.stage1:
+            if not self.training:
+                return outputs[0].detach(), mask
+            target_mask = self._resize_target(mask, outputs[0].shape[-2:])
+            weight = target_mask * 0.5 + 1.0
+            loss = F.binary_cross_entropy_with_logits(
+                outputs[0], target_mask, weight=weight
+            )
+            loss_dict = {
+                "m_ins": loss.item(),
+                "m_qua": 0.0,
+                "m_sin": 0.0,
+                "m_cos": 0.0,
+                "m_wid": 0.0,
+            }
+            return (
+                (outputs[0].detach(), None, None, None, None),
+                (target_mask, None, None, None, None),
+                loss,
+                loss_dict,
+            )
+
+        if not self.training:
+            targets = (
+                mask,
+                grasp_qua_mask,
+                grasp_sin_mask,
+                grasp_cos_mask,
+                grasp_wid_mask,
+            )
+            return tuple(item.detach() for item in outputs), targets
+
         targets = tuple(
-            self._resize_target(target, output_size)
+            self._resize_target(target, outputs[0].shape[-2:])
             for target in (
                 mask,
                 grasp_qua_mask,
@@ -166,44 +277,24 @@ class MapleGrasp(CROG):
                 grasp_wid_mask,
             )
         )
-        if not self.training:
-            return tuple(item.detach() for item in outputs), targets
-
-        segmentation, quality, sine, cosine, grasp_width = outputs
-        seg_weight = targets[0] * 0.5 + 1.0
         segmentation_loss = F.binary_cross_entropy_with_logits(
-            segmentation, targets[0], weight=seg_weight
+            outputs[0], targets[0], weight=targets[0] * 0.5 + 1.0
         )
-        losses = {
-            "m_ins": segmentation_loss.detach(),
-            "m_qua": segmentation_loss.new_zeros(()),
-            "m_sin": segmentation_loss.new_zeros(()),
-            "m_cos": segmentation_loss.new_zeros(()),
-            "m_wid": segmentation_loss.new_zeros(()),
+        grasp_losses = tuple(
+            F.smooth_l1_loss(prediction, target)
+            for prediction, target in zip(outputs[1:], targets[1:])
+        )
+        total_loss = segmentation_loss + sum(grasp_losses)
+        loss_dict = {
+            "m_ins": segmentation_loss.item(),
+            "m_qua": grasp_losses[0].item(),
+            "m_sin": grasp_losses[1].item(),
+            "m_cos": grasp_losses[2].item(),
+            "m_wid": grasp_losses[3].item(),
         }
-        total_loss = segmentation_loss
-
-        if self.maple_stage != "segmentation":
-            grasp_losses = (
-                F.smooth_l1_loss(quality, targets[1]),
-                F.smooth_l1_loss(sine, targets[2]),
-                F.smooth_l1_loss(cosine, targets[3]),
-                F.smooth_l1_loss(grasp_width, targets[4]),
-            )
-            total_loss = total_loss + self.grasp_loss_weight * sum(grasp_losses)
-            for name, value in zip(
-                ("m_qua", "m_sin", "m_cos", "m_wid"), grasp_losses
-            ):
-                losses[name] = value.detach()
-
         return (
             tuple(item.detach() for item in outputs),
             targets,
             total_loss,
-            losses,
+            loss_dict,
         )
-
-    def _encode(self, image, words):
-        visual = self.backbone.encode_image(image)
-        word_features, text_state = self.backbone.encode_text(words)
-        return visual, word_features, text_state
