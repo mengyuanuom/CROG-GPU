@@ -13,6 +13,9 @@ EXP_NAME="${EXP_NAME:-${MODEL}_crog_protocol_8npu}"
 export ASCEND_RT_VISIBLE_DEVICES="${ASCEND_RT_VISIBLE_DEVICES:-0,1,2,3,4,5,6,7}"
 
 case "${MODEL}" in
+  etrg)
+    WEIGHTS=(clip-rn50 resnet18)
+    ;;
   crogoff|ggcnnclip|grconvnetclip|lgd|maplegrasp)
     WEIGHTS=(clip-rn50)
     ;;
@@ -24,7 +27,7 @@ case "${MODEL}" in
     ;;
   *)
     echo "Unsupported model: ${MODEL}" >&2
-    echo "Choose: crogoff drog drogoff ggcnnclip grconvnetclip graspmamba lgd maplegrasp" >&2
+    echo "Choose: crogoff drog drogoff etrg ggcnnclip grconvnetclip graspmamba lgd maplegrasp" >&2
     exit 2
     ;;
 esac

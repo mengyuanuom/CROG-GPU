@@ -61,6 +61,7 @@ Install the PyTorch/torch_npu pair matching the server's CANN release, then:
 ```bash
 source /usr/local/Ascend/ascend-toolkit/set_env.sh
 pip install -r requirements-npu.txt
+# ETRG only: install the torchvision wheel matching this PyTorch build.
 python tools/check_npu_env.py
 ```
 
@@ -189,7 +190,7 @@ python3 tools/download_pretrained.py
 Download the CROG/DROG backbones in advance (optional):
 
 ```bash
-python3 tools/download_pretrained.py clip-rn50 clip-vit-b16 dinov2-vitb14-reg4
+python3 tools/download_pretrained.py clip-rn50 clip-vit-b16 dinov2-vitb14-reg4 resnet18
 ```
 
 | Key | File | Official source |
@@ -281,6 +282,7 @@ The compatible RGB model implementations from ToolRGSNPU commit
 Available comparison configurations are:
 
 - `crogoff`, `drog`, `drogoff`;
+- `etrg` (RGB-only ETRG-R50; requires matching `torchvision`);
 - `ggcnnclip`, `grconvnetclip`;
 - `lgd`, `maplegrasp`;
 - `graspmamba` (optional `mambavision` dependency and operator compatibility).
@@ -298,11 +300,16 @@ Run one model on eight NPUs with:
 ```bash
 bash tools/train_toolrgs_model_8npu.sh drog
 bash tools/train_toolrgs_model_8npu.sh drogoff
+bash tools/train_toolrgs_model_8npu.sh etrg
 ```
 
 The launcher downloads and verifies the backbone weights required by the
 selected model. `TRAIN.batch_size` in every YAML is the global batch size and
 is divided across the eight processes by `train_crog.py`.
+
+ETRG uses the same CROG legacy evaluator and OCID-VLG RGB input. Its
+auxiliary ResNet-18 consumes RGB rather than depth, and the launcher
+downloads both `RN50.pt` and `resnet18-f37072fd.pth` automatically.
 
 
 ## License

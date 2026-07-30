@@ -11,6 +11,7 @@ Examples:
   bash tools/train_8npu.sh config/OCID-VLG/crog_multiple_r50.yaml
   bash tools/train_8npu.sh config/OCID-VLG/drog.yaml
   bash tools/train_8npu.sh config/OCID-VLG/drogoff.yaml
+  bash tools/train_8npu.sh config/OCID-VLG/etrg.yaml
 EOF
 }
 
@@ -66,6 +67,13 @@ else
   TRAIN_OPTS+=(
     TRAIN.clip_pretrain "${CLIP_WEIGHT}"
   )
+fi
+
+if grep -Eq '^[[:space:]]*architecture[[:space:]]*:[[:space:]]*etrg([[:space:]]|$)' "${CONFIG}"; then
+  MODEL_FAMILY="ETRG"
+  RESNET_WEIGHT="${RESNET_WEIGHT:-${REPO_ROOT}/pretrain/resnet18-f37072fd.pth}"
+  python3 tools/download_pretrained.py resnet18 --output "${RESNET_WEIGHT}"
+  TRAIN_OPTS+=(TRAIN.depth_pretrain "${RESNET_WEIGHT}")
 fi
 
 echo "[launch] config: ${CONFIG}"

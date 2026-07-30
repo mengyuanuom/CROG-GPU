@@ -4,6 +4,8 @@ from importlib import import_module
 
 
 MODEL_REGISTRY = {
+    "etrg": ("etrg", "ETRG"),
+    "etrg_rgb": ("etrg", "ETRG"),
     "crogoff": ("crogoff", "CROGOFF"),
     "ggcnnclip": ("ggcnnclip", "GGCNN_CLIP"),
     "ggcnn_clip": ("ggcnnclip", "GGCNN_CLIP"),

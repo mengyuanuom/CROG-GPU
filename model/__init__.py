@@ -116,6 +116,8 @@ def build_model(args):
         return builders[architecture](args)
     toolrgs_models = {
         "crogoff",
+        "etrg",
+        "etrg_rgb",
         "ggcnnclip",
         "ggcnn_clip",
         "grconvnetclip",

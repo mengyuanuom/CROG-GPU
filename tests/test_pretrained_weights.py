@@ -121,6 +121,7 @@ class PretrainedWeightsTest(unittest.TestCase):
         self.assertIn('cfg.dino_pretrain, "dinov2-vitb14-reg4"', drog)
         self.assertIn("tools/download_pretrained.py clip-vit-b16", launcher)
         self.assertIn("tools/download_pretrained.py dinov2-vitb14-reg4", launcher)
+        self.assertIn("tools/download_pretrained.py resnet18", launcher)
 
 
 if __name__ == "__main__":

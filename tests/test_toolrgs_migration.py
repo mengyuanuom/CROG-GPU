@@ -8,6 +8,7 @@ MODELS = (
     "crogoff",
     "drog",
     "drogoff",
+    "etrg",
     "ggcnnclip",
     "grconvnetclip",
     "graspmamba",
@@ -64,6 +65,35 @@ class ToolRGSModelMigrationTest(unittest.TestCase):
         top_level = {path.name for path in (ROOT / "model").glob("*.py")}
         self.assertIn("drogoff.py", top_level)
         self.assertIn("drog.py", top_level)
+
+    def test_etrg_rgb_profile_keeps_official_modules_and_crog_contract(self):
+        package = ROOT / "model" / "toolrgs" / "etrg"
+        files = (
+            "model.py", "bridger.py", "clip.py",
+            "fusion.py", "layers.py", "LICENSE",
+        )
+        for name in files:
+            with self.subTest(name=name):
+                self.assertTrue((package / name).is_file())
+        source = (package / "model.py").read_text(encoding="utf-8")
+        for token in (
+            "requires_depth = False",
+            "supports_offset = False",
+            "Bridger_SA_RN_depth",
+            "self.resnet18",
+            "return detached, target_values, total",
+            'ensure_pretrained(cfg.clip_pretrain, "clip-rn50")',
+            'ensure_pretrained(local_weight, "resnet18")',
+        ):
+            with self.subTest(token=token):
+                self.assertIn(token, source)
+        self.assertNotIn(".cuda(", source)
+        config = (ROOT / "config" / "OCID-VLG" / "etrg.yaml").read_text(
+            encoding="utf-8"
+        )
+        self.assertRegex(config, r"(?m)^\s*with_depth:\s*false\s*$")
+        self.assertRegex(config, r"(?m)^\s*etrg_input_mode:\s*rgb\s*$")
+        self.assertIn("pretrain/resnet18-f37072fd.pth", config)
 
     def test_crog_evaluation_contract_is_retained(self):
         source = (

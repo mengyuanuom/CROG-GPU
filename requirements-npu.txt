@@ -1,5 +1,6 @@
 # Install the torch and torch_npu wheels that exactly match the server's CANN
-# release first. They are intentionally not pinned here.
+# release first. Install the matching torchvision wheel too for ETRG; these
+# accelerator packages are intentionally not pinned here.
 ftfy==6.1.1
 fvcore==0.1.5.post20221221
 lmdb==1.4.1
