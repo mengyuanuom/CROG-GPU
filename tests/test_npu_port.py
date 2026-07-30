@@ -21,7 +21,7 @@ class OfficialCROGNPUConfigTest(unittest.TestCase):
             r"^\s*epochs:\s*50\s*$",
             r"^\s*milestones:\s*\[35\]\s*$",
             r"^\s*batch_size:\s*32\b",
-            r"^\s*batch_size_val:\s*24\b",
+            r"^\s*batch_size_val:\s*32\b",
             r"^\s*base_lr:\s*0\.0001\b",
             r"^\s*lr_multi:\s*0\.1\b",
             r"^\s*sync_bn:\s*False\b",
@@ -37,6 +37,14 @@ class OfficialCROGNPUConfigTest(unittest.TestCase):
         for pattern in expected_lines:
             with self.subTest(pattern=pattern):
                 self.assertRegex(source, re.compile(pattern, re.MULTILINE))
+
+    def test_all_yaml_batches_are_32(self):
+        config_dir = ROOT / "config"
+        for path in sorted(config_dir.rglob("*.yaml")):
+            source = path.read_text(encoding="utf-8")
+            with self.subTest(config=path.relative_to(config_dir)):
+                self.assertRegex(source, r"(?m)^\s*batch_size:\s*32\b")
+                self.assertRegex(source, r"(?m)^\s*batch_size_val:\s*32\b")
 
     def test_training_path_has_no_cuda_or_nccl_calls(self):
         paths = (
@@ -302,7 +310,7 @@ class OfficialCROGNPUConfigTest(unittest.TestCase):
 
     def test_drog_configs_match_the_requested_global_schedule(self):
         expected_optimization = {
-            "drog.yaml": ("drog", 32, 24, "0.0001"),
+            "drog.yaml": ("drog", 32, 32, "0.0001"),
             "drogoff.yaml": ("drogoff", 32, 32, "0.0004"),
         }
         for name, (

@@ -43,9 +43,9 @@ python -u train_ssg.py --config config/OCID-Grasp/ssg_r50.yaml
 
 ## Ascend NPU port
 
-The CROG and DROG configurations keep the official global batch size (24),
-Adam learning rate (`1e-4`), 50-epoch schedule, and epoch-35 learning-rate
-decay. DROG-OFF uses a global batch size of 128 and learning rate `4e-4`.
+Every YAML under `config/` sets both training and validation batch size to
+`32`. CROG and DROG use Adam at `1e-4`; DROG-OFF uses `4e-4`. Their 50-epoch
+schedule and epoch-35 learning-rate decay are unchanged.
 Only the accelerator/runtime path is changed:
 
 - explicit `torch_npu` device calls instead of CUDA calls;

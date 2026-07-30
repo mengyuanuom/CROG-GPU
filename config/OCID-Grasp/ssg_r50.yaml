@@ -12,7 +12,7 @@ DATA:
   with_depth: True
   num_grasp_masks: 4
   batch_size: 32  # batch size for training
-  batch_size_val: 2
+  batch_size_val: 32
   workers: 16  # data loader workers
   workers_val: 16
 
