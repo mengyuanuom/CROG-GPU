@@ -49,7 +49,7 @@ TRAIN:
   workers: 4  # per process; 32 workers total with eight NPUs
   workers_val: 2
   epochs: 24
-  milestones: [20]
+  milestones: [15]
   start_epoch: 0
   batch_size: 32  # global train batch size; 4 samples per process on 8 NPUs
   batch_size_val: 32  # global validation batch size

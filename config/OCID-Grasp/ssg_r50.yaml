@@ -38,7 +38,7 @@ TRAIN:
   lr_decay: 0.95
   momentum: 0.9
   weight_decay: 0.0005
-  milestones: [20]
+  milestones: [15]
   start_epoch: 0
   epochs: 24
   max_norm: 0.

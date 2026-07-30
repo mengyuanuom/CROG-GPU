@@ -19,7 +19,7 @@ class OfficialCROGNPUConfigTest(unittest.TestCase):
         source = path.read_text(encoding="utf-8")
         expected_lines = (
             r"^\s*epochs:\s*24\s*$",
-            r"^\s*milestones:\s*\[20\]\s*$",
+            r"^\s*milestones:\s*\[15\]\s*$",
             r"^\s*batch_size:\s*32\b",
             r"^\s*batch_size_val:\s*32\b",
             r"^\s*base_lr:\s*0\.0001\b",
@@ -46,7 +46,7 @@ class OfficialCROGNPUConfigTest(unittest.TestCase):
                 self.assertRegex(source, r"(?m)^\s*batch_size:\s*32\b")
                 self.assertRegex(source, r"(?m)^\s*batch_size_val:\s*32\b")
                 self.assertRegex(source, r"(?m)^\s*epochs:\s*24\s*$")
-                self.assertRegex(source, r"(?m)^\s*milestones:\s*\[20\]\s*$")
+                self.assertRegex(source, r"(?m)^\s*milestones:\s*\[15\]\s*$")
 
     def test_training_path_has_no_cuda_or_nccl_calls(self):
         paths = (
@@ -325,7 +325,7 @@ class OfficialCROGNPUConfigTest(unittest.TestCase):
             with self.subTest(config=name):
                 self.assertRegex(source, rf"(?m)^\s*architecture:\s*{architecture}\s*$")
                 self.assertRegex(source, r"(?m)^\s*epochs:\s*24\s*$")
-                self.assertRegex(source, r"(?m)^\s*milestones:\s*\[20\]\s*$")
+                self.assertRegex(source, r"(?m)^\s*milestones:\s*\[15\]\s*$")
                 self.assertRegex(source, rf"(?m)^\s*batch_size:\s*{batch_size}\b")
                 self.assertRegex(
                     source,
