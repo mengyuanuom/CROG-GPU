@@ -280,6 +280,8 @@ class OfficialCROGNPUConfigTest(unittest.TestCase):
                     source,
                     rf"(?m)^\s*offset_resample_geometry:\s*{resample}\s*$",
                 )
+                self.assertRegex(source, r"(?m)^\s*batch_size:\s*32\b")
+                self.assertRegex(source, r"(?m)^\s*batch_size_val:\s*32\b")
 
     def test_evaluation_keeps_ground_truth_on_the_input_canvas(self):
         engine = (ROOT / "engine" / "crog_engine.py").read_text(encoding="utf-8")
@@ -300,17 +302,25 @@ class OfficialCROGNPUConfigTest(unittest.TestCase):
 
     def test_drog_configs_match_the_requested_global_schedule(self):
         expected_optimization = {
-            "drog.yaml": ("drog", 32, "0.0001"),
-            "drogoff.yaml": ("drogoff", 32, "0.0004"),
+            "drog.yaml": ("drog", 32, 24, "0.0001"),
+            "drogoff.yaml": ("drogoff", 32, 32, "0.0004"),
         }
-        for name, (architecture, batch_size, base_lr) in expected_optimization.items():
+        for name, (
+            architecture,
+            batch_size,
+            batch_size_val,
+            base_lr,
+        ) in expected_optimization.items():
             source = (ROOT / "config" / "OCID-VLG" / name).read_text(encoding="utf-8")
             with self.subTest(config=name):
                 self.assertRegex(source, rf"(?m)^\s*architecture:\s*{architecture}\s*$")
                 self.assertRegex(source, r"(?m)^\s*epochs:\s*50\s*$")
                 self.assertRegex(source, r"(?m)^\s*milestones:\s*\[35\]\s*$")
                 self.assertRegex(source, rf"(?m)^\s*batch_size:\s*{batch_size}\b")
-                self.assertRegex(source, r"(?m)^\s*batch_size_val:\s*24\b")
+                self.assertRegex(
+                    source,
+                    rf"(?m)^\s*batch_size_val:\s*{batch_size_val}\b",
+                )
                 self.assertRegex(
                     source, rf"(?m)^\s*base_lr:\s*{re.escape(base_lr)}\b"
                 )
