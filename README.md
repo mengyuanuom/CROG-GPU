@@ -44,8 +44,8 @@ python -u train_ssg.py --config config/OCID-Grasp/ssg_r50.yaml
 ## Ascend NPU port
 
 Every YAML under `config/` sets both training and validation batch size to
-`32`. CROG and DROG use Adam at `1e-4`; DROG-OFF uses `4e-4`. Their 50-epoch
-schedule and epoch-35 learning-rate decay are unchanged.
+`32`. CROG and DROG use Adam at `1e-4`; DROG-OFF uses `4e-4`. Every profile
+runs for 24 epochs with one learning-rate milestone at epoch 20.
 Only the accelerator/runtime path is changed:
 
 - explicit `torch_npu` device calls instead of CUDA calls;
@@ -268,8 +268,8 @@ Stage-1-compatible alias.
 
 The upstream README names a MapleGrasp YAML that is not present in its released
 git tree. Consequently, this port keeps the CROG schedule used by the model
-base (50 epochs, milestone 35, Adam at `1e-4`) rather than inventing unpublished
-stage-specific hyperparameters.
+base optimizer (Adam at `1e-4`); its schedule follows the repository-wide
+24-epoch, milestone-20 experiment setting.
 
 ## ToolRGSNPU model comparison under the CROG protocol
 

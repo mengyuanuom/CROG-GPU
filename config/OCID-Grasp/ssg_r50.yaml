@@ -38,9 +38,9 @@ TRAIN:
   lr_decay: 0.95
   momentum: 0.9
   weight_decay: 0.0005
-  milestones: [100, 200, 300, 400, 500, 600, 700, 800, 900]
+  milestones: [20]
   start_epoch: 0
-  epochs: 5000
+  epochs: 24
   max_norm: 0.
   sync_bn: False  # torch_npu SyncBatchNorm can trigger AIVector/MTE faults
   alpha_conf: 1

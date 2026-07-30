@@ -23,8 +23,8 @@ TRAIN:
   # Training Setting
   workers: 0  # data loader workers
   workers_val: 0
-  epochs: 200
-  milestones: [50, 100, 150]
+  epochs: 24
+  milestones: [20]
   start_epoch: 0
   batch_size: 32  # global train batch size; 4 samples per process on 8 NPUs
   batch_size_val: 32  # batch size for validation during training, memory and speed tradeoff

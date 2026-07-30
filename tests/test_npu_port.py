@@ -18,8 +18,8 @@ class OfficialCROGNPUConfigTest(unittest.TestCase):
         path = ROOT / "config" / "OCID-VLG" / "crog_multiple_r50.yaml"
         source = path.read_text(encoding="utf-8")
         expected_lines = (
-            r"^\s*epochs:\s*50\s*$",
-            r"^\s*milestones:\s*\[35\]\s*$",
+            r"^\s*epochs:\s*24\s*$",
+            r"^\s*milestones:\s*\[20\]\s*$",
             r"^\s*batch_size:\s*32\b",
             r"^\s*batch_size_val:\s*32\b",
             r"^\s*base_lr:\s*0\.0001\b",
@@ -38,13 +38,15 @@ class OfficialCROGNPUConfigTest(unittest.TestCase):
             with self.subTest(pattern=pattern):
                 self.assertRegex(source, re.compile(pattern, re.MULTILINE))
 
-    def test_all_yaml_batches_are_32(self):
+    def test_all_yaml_batches_and_schedules_are_uniform(self):
         config_dir = ROOT / "config"
         for path in sorted(config_dir.rglob("*.yaml")):
             source = path.read_text(encoding="utf-8")
             with self.subTest(config=path.relative_to(config_dir)):
                 self.assertRegex(source, r"(?m)^\s*batch_size:\s*32\b")
                 self.assertRegex(source, r"(?m)^\s*batch_size_val:\s*32\b")
+                self.assertRegex(source, r"(?m)^\s*epochs:\s*24\s*$")
+                self.assertRegex(source, r"(?m)^\s*milestones:\s*\[20\]\s*$")
 
     def test_training_path_has_no_cuda_or_nccl_calls(self):
         paths = (
@@ -322,8 +324,8 @@ class OfficialCROGNPUConfigTest(unittest.TestCase):
             source = (ROOT / "config" / "OCID-VLG" / name).read_text(encoding="utf-8")
             with self.subTest(config=name):
                 self.assertRegex(source, rf"(?m)^\s*architecture:\s*{architecture}\s*$")
-                self.assertRegex(source, r"(?m)^\s*epochs:\s*50\s*$")
-                self.assertRegex(source, r"(?m)^\s*milestones:\s*\[35\]\s*$")
+                self.assertRegex(source, r"(?m)^\s*epochs:\s*24\s*$")
+                self.assertRegex(source, r"(?m)^\s*milestones:\s*\[20\]\s*$")
                 self.assertRegex(source, rf"(?m)^\s*batch_size:\s*{batch_size}\b")
                 self.assertRegex(
                     source,
