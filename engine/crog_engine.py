@@ -12,6 +12,10 @@ from utils.dataset import tokenize
 from utils.misc import (AverageMeter, ProgressMeter, concat_all_gather, trainMetricGPU, get_seg_image)
 from utils.npu import autocast
 from utils.grasp_eval import (detect_grasps, calculate_iou, calculate_max_iou, calculate_jacquard_index, visualization)
+from utils.grasp_ablation import (
+    filter_grasp_centres as filter_centres_inside_mask,
+    mask_grasp_quality as mask_quality_outside_segmentation,
+)
 from utils.offset_eval import refine_with_offset, resample_grasp_geometry
 
 def _apply_model_offset(
@@ -25,6 +29,8 @@ def _apply_model_offset(
     args,
 ):
     """Apply DROG-OFF post-processing before the unchanged CROG scorer."""
+    if not bool(getattr(args, "use_offset_at_inference", True)):
+        return grasps
     if offset_map is None or not grasps:
         return grasps
     radius = float(getattr(args, "offset_r", min(input_hw) / 20.0))
@@ -40,6 +46,34 @@ def _apply_model_offset(
             width_factor=100.0,
         )
     return refined
+
+
+def _mask_grasp_quality(quality_map, segmentation_mask, args):
+    """Suppress grasp candidates whose centres are outside the predicted mask."""
+    if not bool(getattr(args, "filter_grasps_by_segmentation", False)):
+        return quality_map
+    return mask_quality_outside_segmentation(quality_map, segmentation_mask)
+
+
+def _filter_grasp_centres(grasps, segmentation_mask, args):
+    """Keep only final grasp rectangles centred inside the predicted mask."""
+    if not bool(getattr(args, "filter_grasps_by_segmentation", False)):
+        return grasps
+    return filter_centres_inside_mask(grasps, segmentation_mask)
+
+
+def _log_drogoff_inference_options(model, args):
+    rank = dist.get_rank() if dist.is_available() and dist.is_initialized() else 0
+    unwrapped_model = getattr(model, "module", model)
+    if rank == 0 and bool(getattr(unwrapped_model, "supports_offset", False)):
+        logger.info(
+            "DROG-OFF inference: offset={}, segmentation-centre-filter={}, "
+            "resample-geometry={}",
+            bool(getattr(args, "use_offset_at_inference", True)),
+            bool(getattr(args, "filter_grasps_by_segmentation", False)),
+            bool(getattr(args, "offset_resample_geometry", False)),
+        )
+
 
 def train_with_grasp(train_loader, model, optimizer, scheduler, scaler, epoch, args):
     batch_time = AverageMeter('Batch', ':2.2f')
@@ -189,6 +223,7 @@ def validate_with_grasp(val_loader, model, epoch, args):
     num_correct_grasps = 0
     num_total_grasps = 0
     model.eval()
+    _log_drogoff_inference_options(model, args)
     time.sleep(2)
 
     num_grasps = [1,5]
@@ -325,7 +360,16 @@ def validate_with_grasp(val_loader, model, epoch, args):
             # Calculate grasp configurations
             for i in range(len(num_grasps)):
                 num_g = num_grasps[i]
-                grasp_preds, _ = detect_grasps(grasp_qua_mask_pred, grasp_sin_mask_pred, grasp_cos_mask_pred, grasp_wid_mask_pred, num_g)
+                detection_quality = _mask_grasp_quality(
+                    grasp_qua_mask_pred, ins_mask_pred, args
+                )
+                grasp_preds, _ = detect_grasps(
+                    detection_quality,
+                    grasp_sin_mask_pred,
+                    grasp_cos_mask_pred,
+                    grasp_wid_mask_pred,
+                    num_g,
+                )
                 grasp_preds = _apply_model_offset(
                     grasp_preds,
                     grasp_off_mask_pred,
@@ -335,6 +379,9 @@ def validate_with_grasp(val_loader, model, epoch, args):
                     grasp_wid_mask_pred,
                     image.shape[-2:],
                     args,
+                )
+                grasp_preds = _filter_grasp_centres(
+                    grasp_preds, ins_mask_pred, args
                 )
 
                 j_index = calculate_jacquard_index(grasp_preds, grasp_target)
@@ -485,6 +532,7 @@ def inference_with_grasp(test_loader, model, args):
     sample_count = 0
     precision_counts = [0, 0, 0, 0, 0]
     model.eval()
+    _log_drogoff_inference_options(model, args)
     time.sleep(2)
 
     num_grasps = [1,5]
@@ -635,7 +683,16 @@ def inference_with_grasp(test_loader, model, args):
             # Calculate grasp configurations
             for i in range(len(num_grasps)):
                 num_g = num_grasps[i]
-                grasp_preds, grasp_ang_mask_pred = detect_grasps(grasp_qua_mask_pred, grasp_sin_mask_pred, grasp_cos_mask_pred, grasp_wid_mask_pred, num_g)
+                detection_quality = _mask_grasp_quality(
+                    grasp_qua_mask_pred, ins_mask_pred, args
+                )
+                grasp_preds, grasp_ang_mask_pred = detect_grasps(
+                    detection_quality,
+                    grasp_sin_mask_pred,
+                    grasp_cos_mask_pred,
+                    grasp_wid_mask_pred,
+                    num_g,
+                )
                 grasp_preds = _apply_model_offset(
                     grasp_preds,
                     grasp_off_mask_pred,
@@ -645,6 +702,9 @@ def inference_with_grasp(test_loader, model, args):
                     grasp_wid_mask_pred,
                     image.shape[-2:],
                     args,
+                )
+                grasp_preds = _filter_grasp_centres(
+                    grasp_preds, ins_mask_pred, args
                 )
 
                 j_index = calculate_jacquard_index(grasp_preds, grasp_target)

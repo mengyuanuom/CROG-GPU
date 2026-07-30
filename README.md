@@ -149,6 +149,35 @@ offset head is supervised during training and refines the predicted center (plus
 angle/width resampling) before the resulting rectangle is passed to the unchanged
 CROG Jacquard scorer.
 
+## DROG-OFF inference ablations
+
+The following evaluation-only profiles reuse the same trained DROG-OFF
+checkpoint; neither changes the model, offset loss, or checkpoint keys.
+
+| Profile | Predicted-mask centre filter | Offset refinement |
+| --- | --- | --- |
+| `drogoff.yaml` | off | on |
+| `drogoff_mask_filter.yaml` | on | on |
+| `drogoff_no_offset.yaml` | off | off |
+
+The mask-filter profile first suppresses grasp-quality peaks outside the
+thresholded predicted segmentation mask. After offset refinement, it checks the
+final rectangle centre again on the same original-image canvas and retains only
+centres inside that predicted mask. The no-offset profile still computes the
+offset head but ignores its output (and geometry resampling) during validation
+and testing.
+
+Evaluate both ablations on one NPU with the baseline checkpoint:
+
+```bash
+ASCEND_RT_VISIBLE_DEVICES=0 python3 test_crog.py --config config/OCID-VLG/drogoff_mask_filter.yaml --opts TRAIN.resume exp/OCID-VLG/drogoff_ocid_vlg_8npu/best_jindex_model.pth
+ASCEND_RT_VISIBLE_DEVICES=0 python3 test_crog.py --config config/OCID-VLG/drogoff_no_offset.yaml --opts TRAIN.resume exp/OCID-VLG/drogoff_ocid_vlg_8npu/best_jindex_model.pth
+```
+
+Change only the `TRAIN.resume` path if the baseline checkpoint is stored
+elsewhere. Because these are inference ablations, retraining them would produce
+the same learned DROG-OFF model.
+
 ## Automatic pretrained weights
 
 List every registered filename and official URL:

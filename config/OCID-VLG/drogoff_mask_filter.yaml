@@ -61,7 +61,7 @@ TRAIN:
   manual_seed: 0
   print_freq: 100
   # Resume & Save
-  exp_name: drogoff_ocid_vlg_8npu
+  exp_name: drogoff_mask_filter_ocid_vlg_8npu
   offset_loss_weight: 1.0
   output_folder: exp/OCID-VLG
   save_freq: 1
@@ -81,6 +81,6 @@ TEST:
   test_split: test
   evaluation_protocol: crog_legacy
   use_offset_at_inference: True
-  filter_grasps_by_segmentation: False
+  filter_grasps_by_segmentation: True
   offset_resample_geometry: True
   visualize: False

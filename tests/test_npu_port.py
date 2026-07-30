@@ -235,6 +235,52 @@ class OfficialCROGNPUConfigTest(unittest.TestCase):
             r"(?m)^\s*offset_resample_geometry:\s*True\s*$",
         )
 
+    def test_drogoff_inference_ablations_are_checkpoint_compatible(self):
+        engine = (ROOT / "engine" / "crog_engine.py").read_text(encoding="utf-8")
+        inference = engine.split("def inference_with_grasp", 1)[1]
+        self.assertIn(
+            'getattr(args, "use_offset_at_inference", True)', engine
+        )
+        self.assertIn(
+            'getattr(args, "filter_grasps_by_segmentation", False)', engine
+        )
+        self.assertLess(
+            inference.index("detect_grasps("),
+            inference.index("_apply_model_offset("),
+        )
+        self.assertLess(
+            inference.index("_apply_model_offset("),
+            inference.index("_filter_grasp_centres("),
+        )
+        self.assertLess(
+            inference.index("_filter_grasp_centres("),
+            inference.index("calculate_jacquard_index("),
+        )
+
+        expected = {
+            "drogoff.yaml": ("True", "False", "True"),
+            "drogoff_mask_filter.yaml": ("True", "True", "True"),
+            "drogoff_no_offset.yaml": ("False", "False", "False"),
+        }
+        for name, (use_offset, mask_filter, resample) in expected.items():
+            source = (ROOT / "config" / "OCID-VLG" / name).read_text(
+                encoding="utf-8"
+            )
+            with self.subTest(config=name):
+                self.assertRegex(source, r"(?m)^\s*architecture:\s*drogoff\s*$")
+                self.assertRegex(
+                    source,
+                    rf"(?m)^\s*use_offset_at_inference:\s*{use_offset}\s*$",
+                )
+                self.assertRegex(
+                    source,
+                    rf"(?m)^\s*filter_grasps_by_segmentation:\s*{mask_filter}\s*$",
+                )
+                self.assertRegex(
+                    source,
+                    rf"(?m)^\s*offset_resample_geometry:\s*{resample}\s*$",
+                )
+
     def test_evaluation_keeps_ground_truth_on_the_input_canvas(self):
         engine = (ROOT / "engine" / "crog_engine.py").read_text(encoding="utf-8")
         model = (ROOT / "model" / "drogoff.py").read_text(encoding="utf-8")
