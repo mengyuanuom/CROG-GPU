@@ -29,6 +29,8 @@ class OfficialCROGNPUConfigTest(unittest.TestCase):
             r"^\s*pin_memory:\s*False\s*$",
             r"^\s*with_depth:\s*False\s*$",
             r"^\s*resume:\s*$",
+            r"^\s*save_freq:\s*1\s*$",
+            r"^\s*val_freq:\s*5\b",
             r"^\s*dist_backend:\s*['\"]hccl['\"]\s*$",
             r"^\s*dist_url:\s*env://\s*$",
         )
@@ -159,6 +161,17 @@ class OfficialCROGNPUConfigTest(unittest.TestCase):
                 for pattern in removed:
                     self.assertIsNone(pattern.search(source))
 
+    def test_validation_interval_and_epoch_checkpoint_names_are_explicit(self):
+        source = (ROOT / "train_crog.py").read_text(encoding="utf-8")
+        self.assertIn("epoch_log % val_freq == 0", source)
+        self.assertIn("epoch_log == args.epochs", source)
+        self.assertIn("'evaluated': do_eval", source)
+        self.assertIn("'last_eval_epoch': last_eval_epoch", source)
+        self.assertIn('f"epoch_{epoch_log:03d}_model.pth"', source)
+        self.assertIn('"best_iou", epoch_log', source)
+        self.assertIn('"best_jindex", epoch_log', source)
+        self.assertIn('os.replace(temporary_lastname, lastname)', source)
+
 
     def test_drog_family_uses_crog_scorer_after_model_postprocess(self):
         trainer = (ROOT / "train_crog.py").read_text(encoding="utf-8")
@@ -204,7 +217,10 @@ class OfficialCROGNPUConfigTest(unittest.TestCase):
         engine = (ROOT / "engine" / "crog_engine.py").read_text(encoding="utf-8")
         model = (ROOT / "model" / "drogoff.py").read_text(encoding="utf-8")
         self.assertIn("with_grasp_offset=needs_offset", trainer)
-        self.assertIn('architecture == "drogoff"', trainer)
+        self.assertIn(
+            'needs_offset = bool(getattr(model, "supports_offset", False))',
+            trainer,
+        )
         self.assertIn('data["grasp_masks"].get("off")', engine)
         self.assertIn("make_dense_offset_with_radius_np", dataset)
         self.assertIn("supports_offset = True", model)
@@ -252,7 +268,10 @@ class OfficialCROGNPUConfigTest(unittest.TestCase):
                 self.assertRegex(
                     source, rf"(?m)^\s*base_lr:\s*{re.escape(base_lr)}\b"
                 )
-                self.assertNotIn("evaluation_protocol", source)
+                self.assertRegex(
+                    source,
+                    r"(?m)^\s*evaluation_protocol:\s*crog_legacy\s*$",
+                )
 
 if __name__ == "__main__":
     unittest.main()

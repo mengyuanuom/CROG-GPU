@@ -50,13 +50,27 @@ def train_with_grasp(train_loader, model, optimizer, scheduler, scaler, epoch, a
     sin_loss_metter = AverageMeter('Loss_sin', ':2.4f')
     cos_loss_metter = AverageMeter('Loss_cos', ':2.4f')
     wid_loss_metter = AverageMeter('Loss_wid', ':2.4f')
+    unwrapped_model = getattr(model, "module", model)
+    off_loss_metter = (
+        AverageMeter('Loss_off', ':2.4f')
+        if bool(getattr(unwrapped_model, "supports_offset", False))
+        else None
+    )
     iou_meter = AverageMeter('IoU', ':2.2f')
     pr_meter = AverageMeter('Prec@50', ':2.2f')
+    component_loss_meters = [
+        qua_loss_metter,
+        sin_loss_metter,
+        cos_loss_metter,
+        wid_loss_metter,
+    ]
+    if off_loss_metter is not None:
+        component_loss_meters.append(off_loss_metter)
     progress = ProgressMeter(
         len(train_loader),
         [
             batch_time, data_time, lr, loss_meter,
-            qua_loss_metter, sin_loss_metter, cos_loss_metter, wid_loss_metter,
+            *component_loss_meters,
             iou_meter, pr_meter
         ],
         prefix="Training: Epoch=[{}/{}] ".format(epoch, args.epochs))
@@ -136,6 +150,8 @@ def train_with_grasp(train_loader, model, optimizer, scheduler, scaler, epoch, a
         sin_loss_metter.update(loss_dict["m_sin"], image.size(0))
         cos_loss_metter.update(loss_dict["m_cos"], image.size(0))
         wid_loss_metter.update(loss_dict["m_wid"], image.size(0))
+        if off_loss_metter is not None:
+            off_loss_metter.update(loss_dict["m_off"], image.size(0))
         iou_meter.update(iou.item(), image.size(0))
         pr_meter.update(pr5.item(), image.size(0))
         lr.update(scheduler.get_last_lr()[-1])

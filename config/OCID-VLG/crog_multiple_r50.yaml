@@ -4,6 +4,8 @@ DATA:
   with_depth: False
   train_split: train
   val_split: val
+MODEL:
+  architecture: crog
 TRAIN:
   # Base Arch
   clip_pretrain: pretrain/RN50.pt
@@ -42,6 +44,7 @@ TRAIN:
   exp_name: CROG_official_multiple_R50_8npu
   output_folder: exp/OCID-VLG_multiple_npu
   save_freq: 1
+  val_freq: 5  # evaluate every 5 epochs; the final epoch is always evaluated
   weight:  # path to initial weight (default: none)
   resume:
   evaluate: True  # evaluate on validation set, extra gpu memory needed and small batch_size_val is recommend
@@ -56,5 +59,6 @@ Distributed:
   world_size: 1
   rank: 0
 TEST:
-  test_split: val-test
+  test_split: test
+  evaluation_protocol: crog_legacy
   visualize: False

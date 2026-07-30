@@ -65,6 +65,45 @@ def build_drogoff(args):
     return _build_drog_family(DROGOFF, args)
 
 
+def _build_toolrgs_family(args):
+    from .toolrgs import build_toolrgs_model
+
+    architecture = str(args.architecture).strip().lower()
+    model = build_toolrgs_model(architecture, args)
+    backbone = []
+    head = []
+    frozen = []
+    for name, parameter in model.named_parameters():
+        if not parameter.requires_grad:
+            frozen.append(parameter)
+        elif name.startswith(
+            ("backbone", "bridger", "txt_backbone", "dinov2")
+        ) and "positional_embedding" not in name:
+            backbone.append(parameter)
+        else:
+            head.append(parameter)
+    logger.info(
+        "{}: Backbone={}, Head={}, Frozen={}".format(
+            type(model).__name__,
+            len(backbone),
+            len(head),
+            len(frozen),
+        )
+    )
+    return model, [
+        {
+            "params": backbone,
+            "lr": args.lr_multi * args.base_lr,
+            "initial_lr": args.lr_multi * args.base_lr,
+        },
+        {
+            "params": head,
+            "lr": args.base_lr,
+            "initial_lr": args.base_lr,
+        },
+    ]
+
+
 def build_model(args):
     """Select an architecture without changing CROG's model or evaluator."""
     architecture = str(getattr(args, "architecture", "crog")).lower()
@@ -73,12 +112,26 @@ def build_model(args):
         "drog": build_drog,
         "drogoff": build_drogoff,
     }
-    if architecture not in builders:
-        choices = ", ".join(sorted(builders))
-        raise ValueError(
-            f"Unknown MODEL.architecture {architecture!r}; choose one of: {choices}"
-        )
-    return builders[architecture](args)
+    if architecture in builders:
+        return builders[architecture](args)
+    toolrgs_models = {
+        "crogoff",
+        "ggcnnclip",
+        "ggcnn_clip",
+        "grconvnetclip",
+        "grconvnet_clip",
+        "graspmamba",
+        "grasp_mamba",
+        "lgd",
+        "maplegrasp",
+        "maple_grasp",
+    }
+    if architecture in toolrgs_models:
+        return _build_toolrgs_family(args)
+    choices = ", ".join(sorted(set(builders) | toolrgs_models))
+    raise ValueError(
+        f"Unknown MODEL.architecture {architecture!r}; choose one of: {choices}"
+    )
 
 def build_ssg(args):
     model = SSG(args)

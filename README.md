@@ -207,6 +207,39 @@ DATA_ROOT=/data/OCID-VLG CLIP_WEIGHT=/data/RN50.pt \
   bash tools/train_8npu.sh config/OCID-VLG/crog_multiple_r50.yaml
 ```
 
+## ToolRGSNPU model comparison under the CROG protocol
+
+The compatible RGB model implementations from ToolRGSNPU commit
+`c9b1af73ac359c14c13dbd0acb8492f8af3d6075` are isolated under
+`model/toolrgs/`. The original `model/crog.py`, `model/clip.py`, and
+`model/layers.py` remain the default CROG implementation.
+
+Available comparison configurations are:
+
+- `crogoff`, `drog`, `drogoff`;
+- `ggcnnclip`, `grconvnetclip`;
+- `lgd`, `maplegrasp`;
+- `graspmamba` (optional `mambavision` dependency and operator compatibility).
+
+These configurations are deliberately locked to `evaluation_protocol:
+crog_legacy`. They use the same OCID-VLG split and preprocessing as CROG, mask
+threshold `0.35`, cubic inverse warp, sigmoid decoding only for segmentation,
+quality and width, raw sine/cosine angle decoding, Top-1/Top-5 proposals, and
+the original CROG Jacquard test. CROGOFF and DROGOFF additionally translate
+the predicted grasp centre using their offset map before that same Jacquard
+test; the angle, width, thresholds and success criterion are unchanged.
+
+Run one model on eight NPUs with:
+
+```bash
+bash tools/train_toolrgs_model_8npu.sh drog
+bash tools/train_toolrgs_model_8npu.sh drogoff
+```
+
+The launcher downloads and verifies the backbone weights required by the
+selected model. `TRAIN.batch_size` in every YAML is the global batch size and
+is divided across the eight processes by `train_crog.py`.
+
 
 ## License
 

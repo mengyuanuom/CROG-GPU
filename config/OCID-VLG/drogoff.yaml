@@ -64,7 +64,8 @@ TRAIN:
   exp_name: drogoff_ocid_vlg_8npu
   offset_loss_weight: 1.0
   output_folder: exp/OCID-VLG
-  save_freq: 0  # disabled; only best validation checkpoints are saved
+  save_freq: 1
+  val_freq: 5
   weight:  # path to initial weight (default: none)
   resume: # path to latest checkpoint (default: none)
   evaluate: True
@@ -78,5 +79,6 @@ Distributed:
 
 TEST:
   test_split: test
+  evaluation_protocol: crog_legacy
   offset_resample_geometry: True
   visualize: False

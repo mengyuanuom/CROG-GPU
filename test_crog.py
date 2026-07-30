@@ -41,6 +41,15 @@ def get_parser():
 @logger.catch(reraise=True)
 def main():
     args = get_parser()
+    evaluation_protocol = str(
+        getattr(args, "evaluation_protocol", "crog_legacy")
+    ).strip().lower()
+    if evaluation_protocol not in {"crog", "crog_legacy", "crog_source"}:
+        raise ValueError(
+            "test_crog.py preserves the CROG evaluation protocol; "
+            "set TEST.evaluation_protocol=crog_legacy."
+        )
+    args.evaluation_protocol = "crog_legacy"
     args.npu = int(os.environ.get("LOCAL_RANK", 0))
     args.rank = int(os.environ.get("RANK", 0))
     args.world_size = int(os.environ.get("WORLD_SIZE", 1))

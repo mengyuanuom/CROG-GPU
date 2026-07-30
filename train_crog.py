@@ -1,6 +1,7 @@
 import argparse
 import datetime
 import os
+from pathlib import Path
 import shutil
 import sys
 import time
@@ -31,6 +32,31 @@ warnings.filterwarnings("ignore")
 cv2.setNumThreads(0)
 
 
+def _replace_with_link_or_copy(source, target):
+    """Atomically update a checkpoint alias without duplicating data if possible."""
+    source = Path(source)
+    target = Path(target)
+    temporary = target.with_name(f".{target.name}.tmp")
+    if temporary.exists():
+        temporary.unlink()
+    try:
+        os.link(source, temporary)
+    except OSError:
+        shutil.copyfile(source, temporary)
+    os.replace(temporary, target)
+
+
+def _replace_epoch_alias(source, output_dir, prefix, epoch):
+    """Keep one epoch-labelled alias for a moving checkpoint series."""
+    output_dir = Path(output_dir)
+    target = output_dir / f"{prefix}_epoch_{int(epoch):03d}.pth"
+    _replace_with_link_or_copy(source, target)
+    for previous in output_dir.glob(f"{prefix}_epoch_*.pth"):
+        if previous != target:
+            previous.unlink()
+    return target
+
+
 def get_parser():
     parser = argparse.ArgumentParser(
         description='Pytorch Referring Expression Segmentation')
@@ -54,6 +80,15 @@ def get_parser():
 @logger.catch(reraise=True)
 def main():
     args = get_parser()
+    evaluation_protocol = str(
+        getattr(args, "evaluation_protocol", "crog_legacy")
+    ).strip().lower()
+    if evaluation_protocol not in {"crog", "crog_legacy", "crog_source"}:
+        raise ValueError(
+            "train_crog.py preserves the CROG evaluation protocol; "
+            "set TEST.evaluation_protocol=crog_legacy."
+        )
+    args.evaluation_protocol = "crog_legacy"
     args.local_rank = int(os.environ.get("LOCAL_RANK", 0))
     args.rank = int(os.environ.get("RANK", 0))
     args.world_size = int(os.environ.get("WORLD_SIZE", 1))
@@ -114,6 +149,12 @@ def main_worker(local_rank, args):
 
     # build model
     model, param_list = build_model(args)
+    needs_offset = bool(getattr(model, "supports_offset", False))
+    logger.info(
+        "Model architecture: {}, offset supervision: {}",
+        getattr(args, "architecture", "crog"),
+        needs_offset,
+    )
     if args.sync_bn:
         logger.warning(
             "SyncBatchNorm is disabled for the Ascend NPU training path. "
@@ -194,8 +235,6 @@ def main_worker(local_rank, args):
         (args.workers + args.world_size - 1) / args.world_size)
 
 
-    architecture = str(getattr(args, "architecture", "crog")).lower()
-    needs_offset = architecture == "drogoff"
     train_data = OCIDVLGDataset(root_dir=args.root_path,
                             input_size=args.input_size,
                             word_length=args.word_len,
@@ -241,6 +280,10 @@ def main_worker(local_rank, args):
 
     best_IoU = 0.0
     best_j_index = 0.0
+    last_eval_epoch = 0
+    last_iou = None
+    last_prec_dict = {}
+    last_j_index = []
     # resume
     if args.resume:
         if os.path.isfile(args.resume):
@@ -249,6 +292,18 @@ def main_worker(local_rank, args):
             args.start_epoch = checkpoint['epoch']
             best_IoU = checkpoint["best_iou"]
             best_j_index = checkpoint["best_j_index"]
+            last_eval_epoch = int(
+                checkpoint.get("last_eval_epoch", checkpoint["epoch"])
+            )
+            last_iou = checkpoint.get(
+                "last_iou", checkpoint.get("cur_iou")
+            )
+            last_prec_dict = checkpoint.get(
+                "last_prec", checkpoint.get("prec", {})
+            )
+            last_j_index = checkpoint.get(
+                "last_j_index", checkpoint.get("j_index", [])
+            )
             model.load_state_dict(checkpoint['state_dict'])
             optimizer.load_state_dict(checkpoint['optimizer'])
             for state in optimizer.state.values():
@@ -266,6 +321,22 @@ def main_worker(local_rank, args):
                 "=> resume failed! no checkpoint found at '{}'. Please check args.resume again!"
                 .format(args.resume))
 
+    val_freq = int(getattr(args, "val_freq", 1))
+    save_freq = int(getattr(args, "save_freq", 1))
+    evaluate_enabled = bool(getattr(args, "evaluate", True))
+    if evaluate_enabled and val_freq <= 0:
+        raise ValueError(f"val_freq must be positive, got {val_freq}")
+    if save_freq < 0:
+        raise ValueError(f"save_freq must be non-negative, got {save_freq}")
+    if args.rank == 0:
+        logger.info(
+            "Validation schedule: enabled={}, every {} epoch(s), "
+            "always on final epoch; checkpoint snapshots every {} epoch(s)",
+            evaluate_enabled,
+            val_freq,
+            save_freq if save_freq else "disabled",
+        )
+
     # start training
     start_time = time.time()
     for epoch in range(args.start_epoch, args.epochs):
@@ -276,11 +347,29 @@ def main_worker(local_rank, args):
 
         # train
         train_with_grasp(train_loader, model, optimizer, scheduler, scaler, epoch_log,  args)
-        # evaluation
-        if args.use_grasp_masks:
-            iou, prec_dict, j_index = validate_with_grasp(val_loader, model, epoch_log, args)
-        else:
-            iou, prec_dict, j_index = validate_without_grasp(val_loader, model, epoch_log, args)
+        do_eval = evaluate_enabled and (
+            epoch_log % val_freq == 0 or epoch_log == args.epochs
+        )
+        iou, prec_dict, j_index = None, {}, []
+        if do_eval:
+            if args.use_grasp_masks:
+                iou, prec_dict, j_index = validate_with_grasp(
+                    val_loader, model, epoch_log, args
+                )
+            else:
+                iou, prec_dict, j_index = validate_without_grasp(
+                    val_loader, model, epoch_log, args
+                )
+            last_eval_epoch = epoch_log
+            last_iou = iou
+            last_prec_dict = prec_dict
+            last_j_index = j_index
+        elif args.rank == 0:
+            logger.info(
+                "Skipping validation at epoch {} (val_freq={})",
+                epoch_log,
+                val_freq,
+            )
 
         # Keep the checkpoint scheduler state aligned with the next epoch.
         # This is the same uninterrupted training schedule as upstream.
@@ -289,31 +378,65 @@ def main_worker(local_rank, args):
         # save model
         if dist.get_rank() == 0:
             lastname = os.path.join(args.output_dir, "last_model.pth")
-            improved_iou = iou >= best_IoU
-            improved_j = j_index[0] >= best_j_index
+            improved_iou = bool(do_eval and iou >= best_IoU)
+            improved_j = bool(
+                do_eval and j_index and j_index[0] >= best_j_index
+            )
             if improved_iou:
                 best_IoU = iou
             if improved_j:
                 best_j_index = j_index[0]
-            torch.save(
-                {
-                    'epoch': epoch_log,
-                    'cur_iou': iou,
-                    'best_iou': best_IoU,
-                    'best_j_index': best_j_index,
-                    'prec': prec_dict,
-                    'j_index': j_index,
-                    'state_dict': model.state_dict(),
-                    'optimizer': optimizer.state_dict(),
-                    'scheduler': scheduler.state_dict()
-                }, lastname)
+            checkpoint = {
+                'epoch': epoch_log,
+                'evaluated': do_eval,
+                'cur_iou': iou,
+                'best_iou': best_IoU,
+                'best_j_index': best_j_index,
+                'prec': prec_dict,
+                'j_index': j_index,
+                'last_eval_epoch': last_eval_epoch,
+                'last_iou': last_iou,
+                'last_prec': last_prec_dict,
+                'last_j_index': last_j_index,
+                'state_dict': model.state_dict(),
+                'optimizer': optimizer.state_dict(),
+                'scheduler': scheduler.state_dict()
+            }
+            temporary_lastname = os.path.join(
+                args.output_dir, ".last_model.pth.tmp"
+            )
+            torch.save(checkpoint, temporary_lastname)
+            os.replace(temporary_lastname, lastname)
+            _replace_epoch_alias(
+                lastname, args.output_dir, "last", epoch_log
+            )
+
+            if save_freq and (
+                epoch_log % save_freq == 0 or epoch_log == args.epochs
+            ):
+                epoch_name = os.path.join(
+                    args.output_dir,
+                    f"epoch_{epoch_log:03d}_model.pth",
+                )
+                _replace_with_link_or_copy(lastname, epoch_name)
+
             if improved_iou:
-                bestname = os.path.join(args.output_dir, "best_iou_model.pth")
-                shutil.copyfile(lastname, bestname)
+                bestname = _replace_epoch_alias(
+                    lastname, args.output_dir, "best_iou", epoch_log
+                )
+                _replace_with_link_or_copy(
+                    bestname,
+                    os.path.join(args.output_dir, "best_iou_model.pth"),
+                )
 
             if improved_j:
-                bestname = os.path.join(args.output_dir, "best_jindex_model.pth")
-                shutil.copyfile(lastname, bestname)
+                bestname = _replace_epoch_alias(
+                    lastname, args.output_dir, "best_jindex", epoch_log
+                )
+                _replace_with_link_or_copy(
+                    bestname,
+                    os.path.join(args.output_dir, "best_jindex_model.pth"),
+                )
 
         empty_cache()
 
