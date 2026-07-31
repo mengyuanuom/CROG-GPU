@@ -100,12 +100,12 @@ class ToolRGSModelMigrationTest(unittest.TestCase):
             ROOT / "engine" / "crog_engine.py"
         ).read_text(encoding="utf-8")
         expected = (
-            "flags=cv2.INTER_CUBIC",
-            "ins_mask_pred = (ins_mask_pred > 0.35)",
-            "num_grasps = [1,5]",
+            "else cv2.INTER_CUBIC",
+            "ins_mask_pred = (ins_mask_pred > _segmentation_threshold(args))",
+            "return [1, 5]",
             "torch.sigmoid(grasp_qua_mask_preds)",
             "torch.sigmoid(grasp_wid_mask_preds)",
-            "calculate_jacquard_index(grasp_preds, grasp_target)",
+            "return calculate_jacquard_index(grasp_predictions, grasp_targets)",
         )
         for token in expected:
             with self.subTest(token=token):
@@ -123,7 +123,12 @@ class ToolRGSModelMigrationTest(unittest.TestCase):
         source = (ROOT / "test_crog.py").read_text(encoding="utf-8")
         self.assertIn("from model import build_model", source)
         self.assertIn("model, _ = build_model(args)", source)
-        self.assertIn('args.evaluation_protocol = "crog_legacy"', source)
+        self.assertIn(
+            '"crog_legacy": "crog_legacy"', source
+        )
+        self.assertIn(
+            '"vcot_official": "vcot_official"', source
+        )
         self.assertNotIn(".cuda(", source)
         self.assertNotIn("torch.cuda", source)
 

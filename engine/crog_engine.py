@@ -17,6 +17,37 @@ from utils.grasp_ablation import (
     mask_grasp_quality as mask_quality_outside_segmentation,
 )
 from utils.offset_eval import refine_with_offset, resample_grasp_geometry
+from utils.vcot_eval import calculate_vcot_grasp_success
+
+
+def _is_vcot_official(args):
+    return str(getattr(args, "evaluation_protocol", "crog_legacy")).lower() == "vcot_official"
+
+
+def _inverse_interpolation(args):
+    return cv2.INTER_NEAREST if _is_vcot_official(args) else cv2.INTER_CUBIC
+
+
+def _segmentation_threshold(args):
+    return 0.5 if _is_vcot_official(args) else 0.35
+
+
+def _calculate_grasp_success(grasp_predictions, grasp_targets, args):
+    if _is_vcot_official(args):
+        prediction = grasp_predictions[0] if len(grasp_predictions) else None
+        return calculate_vcot_grasp_success(prediction, grasp_targets)
+    return calculate_jacquard_index(grasp_predictions, grasp_targets)
+
+
+def _evaluation_topk(args):
+    if not _is_vcot_official(args):
+        return [1, 5]
+    topk = [int(value) for value in getattr(args, "grasp_topk", [1])]
+    if topk != [1]:
+        raise ValueError(
+            "vcot_official evaluates exactly one prediction; set TEST.grasp_topk: [1]."
+        )
+    return topk
 
 def _apply_model_offset(
     grasps,
@@ -215,7 +246,7 @@ def train_with_grasp(train_loader, model, optimizer, scheduler, scaler, epoch, a
 def validate_with_grasp(val_loader, model, epoch, args):
     def inverse(img, mat, w, h):
         inv_img = cv2.warpAffine(img, mat, (w, h),
-                                    flags=cv2.INTER_CUBIC,
+                                    flags=_inverse_interpolation(args),
                                     borderValue=0.)
         return inv_img
 
@@ -226,9 +257,9 @@ def validate_with_grasp(val_loader, model, epoch, args):
     _log_drogoff_inference_options(model, args)
     time.sleep(2)
 
-    num_grasps = [1,5]
-    num_correct_grasps = [0, 0]
-    num_total_grasps = [0, 0]
+    num_grasps = _evaluation_topk(args)
+    num_correct_grasps = [0 for _ in num_grasps]
+    num_total_grasps = [0 for _ in num_grasps]
 
     pbar = tqdm(val_loader, disable=dist.get_rank() != 0)
     for data in pbar:
@@ -338,7 +369,7 @@ def validate_with_grasp(val_loader, model, epoch, args):
 
             # Inverse to original size
             ins_mask_pred = inverse(ins_mask_pred, inv_mat, w, h)
-            ins_mask_pred = (ins_mask_pred > 0.35)
+            ins_mask_pred = (ins_mask_pred > _segmentation_threshold(args))
             grasp_qua_mask_pred = inverse(grasp_qua_mask_pred, inv_mat, w, h)
             grasp_sin_mask_pred = inverse(grasp_sin_mask_pred, inv_mat, w, h)
             grasp_cos_mask_pred = inverse(grasp_cos_mask_pred, inv_mat, w, h)
@@ -384,7 +415,7 @@ def validate_with_grasp(val_loader, model, epoch, args):
                     grasp_preds, ins_mask_pred, args
                 )
 
-                j_index = calculate_jacquard_index(grasp_preds, grasp_target)
+                j_index = _calculate_grasp_success(grasp_preds, grasp_target, args)
 
                 num_correct_grasps[i] += j_index
                 num_total_grasps[i] += 1
@@ -414,8 +445,23 @@ def validate_with_grasp(val_loader, model, epoch, args):
         value = prec_list[i].item()
         prec[key] = value
         temp += "{}: {:.2f}  ".format(key, 100. * value)
-    head = 'Evaluation: Epoch=[{}/{}]  IoU={:.2f}  J_index@1: {:.2f}  J_index@5: {:.2f}'.format(
-        epoch, args.epochs, 100. * iou.item(), 100. * J_index[0], 100. * J_index[1])
+    if _is_vcot_official(args):
+        head = (
+            'Evaluation: Epoch=[{}/{}]  IoU={:.2f}  GraspSR: {:.2f}'
+            .format(epoch, args.epochs, 100. * iou.item(), 100. * J_index[0])
+        )
+    else:
+        head = (
+            'Evaluation: Epoch=[{}/{}]  IoU={:.2f}  '
+            'J_index@1: {:.2f}  J_index@5: {:.2f}'
+            .format(
+                epoch,
+                args.epochs,
+                100. * iou.item(),
+                100. * J_index[0],
+                100. * J_index[1],
+            )
+        )
     logger.info(head + temp)
     return iou.item(), prec, J_index
 
@@ -424,7 +470,7 @@ def validate_with_grasp(val_loader, model, epoch, args):
 def validate_without_grasp(val_loader, model, epoch, args):
     def inverse(img, mat, w, h):
         inv_img = cv2.warpAffine(img, mat, (w, h),
-                                    flags=cv2.INTER_CUBIC,
+                                    flags=_inverse_interpolation(args),
                                     borderValue=0.)
         return inv_img
 
@@ -434,9 +480,9 @@ def validate_without_grasp(val_loader, model, epoch, args):
     model.eval()
     time.sleep(2)
 
-    num_grasps = [1,5]
-    num_correct_grasps = [0, 0]
-    num_total_grasps = [0, 0]
+    num_grasps = _evaluation_topk(args)
+    num_correct_grasps = [0 for _ in num_grasps]
+    num_total_grasps = [0 for _ in num_grasps]
 
     pbar = tqdm(val_loader, disable=dist.get_rank() != 0)
     for data in pbar:
@@ -483,7 +529,7 @@ def validate_without_grasp(val_loader, model, epoch, args):
 
             # Inverse to original size
             ins_mask_pred = inverse(ins_mask_pred, inv_mat, w, h)
-            ins_mask_pred = (ins_mask_pred > 0.35)
+            ins_mask_pred = (ins_mask_pred > _segmentation_threshold(args))
 
             ins_mask_target = inverse(ins_mask_target, inv_mat, w, h)
 
@@ -522,7 +568,7 @@ def validate_without_grasp(val_loader, model, epoch, args):
 def inference_with_grasp(test_loader, model, args):
     def inverse(img, mat, w, h):
         inv_img = cv2.warpAffine(img, mat, (w, h),
-                                    flags=cv2.INTER_CUBIC,
+                                    flags=_inverse_interpolation(args),
                                     borderValue=0.)
         return inv_img
 
@@ -535,9 +581,9 @@ def inference_with_grasp(test_loader, model, args):
     _log_drogoff_inference_options(model, args)
     time.sleep(2)
 
-    num_grasps = [1,5]
-    num_correct_grasps = [0, 0]
-    num_total_grasps = [0, 0]
+    num_grasps = _evaluation_topk(args)
+    num_correct_grasps = [0 for _ in num_grasps]
+    num_total_grasps = [0 for _ in num_grasps]
 
     tbar = tqdm(
         test_loader,
@@ -658,7 +704,7 @@ def inference_with_grasp(test_loader, model, args):
 
             # Inverse to original size
             ins_mask_pred = inverse(ins_mask_pred, inv_mat, w, h)
-            ins_mask_pred = (ins_mask_pred > 0.35)
+            ins_mask_pred = (ins_mask_pred > _segmentation_threshold(args))
             grasp_qua_mask_pred = inverse(grasp_qua_mask_pred, inv_mat, w, h)
             grasp_sin_mask_pred = inverse(grasp_sin_mask_pred, inv_mat, w, h)
             grasp_cos_mask_pred = inverse(grasp_cos_mask_pred, inv_mat, w, h)
@@ -707,7 +753,7 @@ def inference_with_grasp(test_loader, model, args):
                     grasp_preds, ins_mask_pred, args
                 )
 
-                j_index = calculate_jacquard_index(grasp_preds, grasp_target)
+                j_index = _calculate_grasp_success(grasp_preds, grasp_target, args)
 
                 num_correct_grasps[i] += j_index
                 num_total_grasps[i] += 1
@@ -718,16 +764,13 @@ def inference_with_grasp(test_loader, model, args):
                     img = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
                     visualization(img, ins_mask_pred, (grasp_qua_mask_pred, grasp_ang_mask_pred, grasp_wid_mask_pred), grasp_preds, sent, save_path=os.path.join("./results", args.exp_name, f"results_rank{rank}_{cnt}_{num_g}_grasps.png"))
 
+    grasp_stats = [
+        value
+        for pair in zip(num_correct_grasps, num_total_grasps)
+        for value in pair
+    ]
     stats = torch.tensor(
-        [
-            iou_sum,
-            sample_count,
-            *precision_counts,
-            num_correct_grasps[0],
-            num_total_grasps[0],
-            num_correct_grasps[1],
-            num_total_grasps[1],
-        ],
+        [iou_sum, sample_count, *precision_counts, *grasp_stats],
         dtype=torch.float32,
         device=args.device,
     )
@@ -742,18 +785,25 @@ def inference_with_grasp(test_loader, model, args):
         ).item()
         for index, threshold in enumerate(thresholds)
     }
+    grasp_offset = 2 + len(thresholds)
     J_index = [
-        (stats[7] / stats[8].clamp_min(1.0)).item(),
-        (stats[9] / stats[10].clamp_min(1.0)).item(),
+        (
+            stats[grasp_offset + 2 * index]
+            / stats[grasp_offset + 2 * index + 1].clamp_min(1.0)
+        ).item()
+        for index in range(len(num_grasps))
     ]
     if rank == 0:
         logger.info('IoU={:.2f}'.format(100.*iou.item()))
         for key, value in prec.items():
             logger.info('{}: {:.2f}.'.format(key, 100.*value))
-        logger.info(
-            "J@1: {:.2f}, J@5: {:.2f}".format(
-                100. * J_index[0], 100. * J_index[1]
+        if _is_vcot_official(args):
+            logger.info("GraspSR: {:.2f}".format(100. * J_index[0]))
+        else:
+            logger.info(
+                "J@1: {:.2f}, J@5: {:.2f}".format(
+                    100. * J_index[0], 100. * J_index[1]
+                )
             )
-        )
 
     return iou.item(), prec, J_index

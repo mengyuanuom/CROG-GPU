@@ -11,7 +11,7 @@ from loguru import logger
 import utils.config as config
 from engine.crog_engine import inference_with_grasp
 from model import build_model
-from utils.dataset import OCIDVLGDataset
+from utils.data_builder import build_referring_grasp_dataset
 from utils.misc import setup_logger
 from utils.npu import set_device
 
@@ -44,12 +44,19 @@ def main():
     evaluation_protocol = str(
         getattr(args, "evaluation_protocol", "crog_legacy")
     ).strip().lower()
-    if evaluation_protocol not in {"crog", "crog_legacy", "crog_source"}:
+    protocol_aliases = {
+        "crog": "crog_legacy",
+        "crog_source": "crog_legacy",
+        "crog_legacy": "crog_legacy",
+        "vcot": "vcot_official",
+        "vcot_source": "vcot_official",
+        "vcot_official": "vcot_official",
+    }
+    if evaluation_protocol not in protocol_aliases:
         raise ValueError(
-            "test_crog.py preserves the CROG evaluation protocol; "
-            "set TEST.evaluation_protocol=crog_legacy."
+            "Unsupported evaluation protocol; choose crog_legacy or vcot_official."
         )
-    args.evaluation_protocol = "crog_legacy"
+    args.evaluation_protocol = protocol_aliases[evaluation_protocol]
     args.npu = int(os.environ.get("LOCAL_RANK", 0))
     args.rank = int(os.environ.get("RANK", 0))
     args.world_size = int(os.environ.get("WORLD_SIZE", 1))
@@ -76,37 +83,32 @@ def main():
     logger.info(args)
 
     # build dataset & dataloader
-    test_split = getattr(args, "test_split", "test")
-    if test_split == "val-test":
-        logger.warning(
-            "test_split='val-test' is not an OCID-VLG split; using 'test'."
-        )
-        test_split = "test"
-    if test_split not in {"train", "val", "test"}:
-        raise ValueError(
-            f"Unsupported OCID-VLG test split: {test_split!r}. "
-            "Choose train, val, or test."
-        )
-    full_test_data = OCIDVLGDataset(root_dir=args.root_path,
-                            input_size=args.input_size,
-                            word_length=args.word_len,
-                            split=test_split,
-                            with_depth=bool(getattr(args, "with_depth", False)),
-                            version=args.version)
+    test_split = str(getattr(args, "test_split", "test"))
+    full_test_data = build_referring_grasp_dataset(
+        args,
+        split=test_split,
+        with_grasp_offset=False,
+    )
+    logger.info(
+        "Dataset: {} (test_split={}, {} samples; protocol={})",
+        getattr(args, "dataset", "OCID-VLG"),
+        test_split,
+        len(full_test_data),
+        args.evaluation_protocol,
+    )
     if args.distributed:
         indices = range(args.rank, len(full_test_data), args.world_size)
         test_data = torch.utils.data.Subset(full_test_data, indices)
     else:
         test_data = full_test_data
-    test_loader = torch.utils.data.DataLoader(test_data,
-                                              batch_size=1,
-                                              shuffle=False,
-                                              num_workers=1,
-                                              pin_memory=bool(
-                                                  getattr(args, "pin_memory", False)
-                                              ),
-                                              collate_fn=OCIDVLGDataset.collate_fn)
-
+    test_loader = torch.utils.data.DataLoader(
+        test_data,
+        batch_size=1,
+        shuffle=False,
+        num_workers=1,
+        pin_memory=bool(getattr(args, "pin_memory", False)),
+        collate_fn=full_test_data.collate_fn,
+    )
     # build model
     model, _ = build_model(args)
     model = model.to(args.device)

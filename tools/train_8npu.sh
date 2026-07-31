@@ -12,6 +12,7 @@ Examples:
   bash tools/train_8npu.sh config/OCID-VLG/drog.yaml
   bash tools/train_8npu.sh config/OCID-VLG/drogoff.yaml
   bash tools/train_8npu.sh config/OCID-VLG/etrg.yaml
+  bash tools/train_8npu.sh config/vcot/drogoff.yaml
 EOF
 }
 
@@ -34,16 +35,31 @@ export ASCEND_RT_VISIBLE_DEVICES="${ASCEND_RT_VISIBLE_DEVICES:-0,1,2,3,4,5,6,7}"
 export CROG_RUN_TIMESTAMP="${CROG_RUN_TIMESTAMP:-$(date +%Y%m%d_%H%M%S_%3N)}"
 
 NPROC_PER_NODE="${NPROC_PER_NODE:-8}"
-DATA_ROOT="${DATA_ROOT:-${REPO_ROOT}/datasets/OCID-VLG}"
+if grep -Eq '^[[:space:]]*dataset[[:space:]]*:[[:space:]]*vcot([[:space:]]|$)' "${CONFIG}"; then
+  DATASET_NAME="VCoT/Grasp-Anything"
+  DATA_ROOT="${DATA_ROOT:-${REPO_ROOT}/datasets/graspanything-vcot}"
+  SPLIT_ROOT="${SPLIT_ROOT:-${DATA_ROOT}/split/vcot}"
+else
+  DATASET_NAME="OCID-VLG"
+  DATA_ROOT="${DATA_ROOT:-${REPO_ROOT}/datasets/OCID-VLG}"
+  SPLIT_ROOT=""
+fi
 
 [[ -d "${DATA_ROOT}" ]] || {
-  echo "OCID-VLG dataset directory not found: ${DATA_ROOT}" >&2
+  echo "${DATASET_NAME} dataset directory not found: ${DATA_ROOT}" >&2
   exit 2
 }
 
-TRAIN_OPTS=(
-  DATA.root_path "${DATA_ROOT}"
-)
+TRAIN_OPTS=(DATA.root_path "${DATA_ROOT}")
+if [[ -n "${SPLIT_ROOT}" ]]; then
+  for SPLIT_FILE in train.csv test_unseen.csv; do
+    [[ -f "${SPLIT_ROOT}/${SPLIT_FILE}" ]] || {
+      echo "VCoT split not found: ${SPLIT_ROOT}/${SPLIT_FILE}" >&2
+      exit 2
+    }
+  done
+  TRAIN_OPTS+=(DATA.split_root "${SPLIT_ROOT}")
+fi
 
 # DROG and DROG-OFF configs contain a DINO backbone; CROG configs do not.
 # Use that model-owned field instead of relying on a filename convention.
@@ -80,7 +96,9 @@ fi
 echo "[launch] config: ${CONFIG}"
 echo "[launch] run timestamp: ${CROG_RUN_TIMESTAMP}"
 echo "[launch] model family: ${MODEL_FAMILY}"
+echo "[launch] dataset: ${DATASET_NAME}"
 echo "[launch] data root: ${DATA_ROOT}"
+[[ -z "${SPLIT_ROOT}" ]] || echo "[launch] split root: ${SPLIT_ROOT}"
 echo "[launch] visible NPUs: ${ASCEND_RT_VISIBLE_DEVICES}"
 echo "[launch] torchrun processes on this node: ${NPROC_PER_NODE}"
 

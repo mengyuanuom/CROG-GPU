@@ -120,11 +120,15 @@ class OfficialCROGNPUConfigTest(unittest.TestCase):
             '"depth": torch.stack([torch.from_numpy(x["depth"]) for x in batch])',
             crog_dataset_source,
         )
+        builder_source = (
+            ROOT / "utils" / "data_builder.py"
+        ).read_text(encoding="utf-8")
+        self.assertIn(
+            'with_depth=bool(getattr(args, "with_depth", False))',
+            builder_source,
+        )
         self.assertEqual(
-            train_source.count(
-                'with_depth=bool(getattr(args, "with_depth", False))'
-            ),
-            2,
+            train_source.count("build_referring_grasp_dataset("), 2
         )
 
     def test_launcher_requires_one_positional_config(self):
@@ -259,15 +263,15 @@ class OfficialCROGNPUConfigTest(unittest.TestCase):
         self.assertIn("_apply_model_offset(", inference)
         self.assertLess(
             inference.index("_apply_model_offset("),
-            inference.index("calculate_jacquard_index("),
+            inference.index("_calculate_grasp_success("),
         )
         for token in (
-            "flags=cv2.INTER_CUBIC",
+            "_inverse_interpolation(args)",
             "align_corners=True",
-            "ins_mask_pred = (ins_mask_pred > 0.35)",
-            "num_grasps = [1,5]",
+            "ins_mask_pred = (ins_mask_pred > _segmentation_threshold(args))",
+            "num_grasps = _evaluation_topk(args)",
             "detect_grasps(",
-            "calculate_jacquard_index(",
+            "_calculate_grasp_success(",
         ):
             self.assertIn(token, inference)
 
@@ -327,7 +331,7 @@ class OfficialCROGNPUConfigTest(unittest.TestCase):
         )
         self.assertLess(
             inference.index("_filter_grasp_centres("),
-            inference.index("calculate_jacquard_index("),
+            inference.index("_calculate_grasp_success("),
         )
 
         expected = {

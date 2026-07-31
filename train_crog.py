@@ -21,7 +21,7 @@ from loguru import logger
 from torch.optim.lr_scheduler import MultiStepLR
 
 import utils.config as config
-from utils.dataset import OCIDVLGDataset
+from utils.data_builder import build_referring_grasp_dataset
 from engine.crog_engine import train_with_grasp, validate_with_grasp, validate_without_grasp
 from model import build_model
 from utils.misc import (init_random_seed, set_random_seed, setup_logger,
@@ -347,21 +347,27 @@ def main_worker(local_rank, args):
         (args.workers + args.world_size - 1) / args.world_size)
 
 
-    train_data = OCIDVLGDataset(root_dir=args.root_path,
-                            input_size=args.input_size,
-                            word_length=args.word_len,
-                            split='train',
-                            with_depth=bool(getattr(args, "with_depth", False)),
-                            version=args.version,
-                            with_grasp_offset=needs_offset,
-                            offset_r=float(getattr(args, "offset_r", 20.0)),
-                            offset_sigma=getattr(args, "offset_sigma", None))
-    val_data = OCIDVLGDataset(root_dir=args.root_path,
-                            input_size=args.input_size,
-                            word_length=args.word_len,
-                            split='val',
-                            with_depth=bool(getattr(args, "with_depth", False)),
-                            version=args.version)
+    train_split = str(getattr(args, "train_split", "train"))
+    val_split = str(getattr(args, "val_split", "val"))
+    train_data = build_referring_grasp_dataset(
+        args,
+        split=train_split,
+        with_grasp_offset=needs_offset,
+    )
+    val_data = build_referring_grasp_dataset(
+        args,
+        split=val_split,
+        with_grasp_offset=False,
+    )
+    if args.rank == 0:
+        logger.info(
+            "Dataset: {} (train_split={}, {} samples; val_split={}, {} samples)",
+            getattr(args, "dataset", "OCID-VLG"),
+            train_split,
+            len(train_data),
+            val_split,
+            len(val_data),
+        )
 
 
     # build dataloader
@@ -380,7 +386,7 @@ def main_worker(local_rank, args):
                                    worker_init_fn=init_fn,
                                    sampler=train_sampler,
                                    drop_last=True,
-                                   collate_fn=OCIDVLGDataset.collate_fn)
+                                   collate_fn=train_data.collate_fn)
     val_loader = data.DataLoader(val_data,
                                  batch_size=args.batch_size_val,
                                  shuffle=False,
@@ -388,7 +394,7 @@ def main_worker(local_rank, args):
                                  pin_memory=bool(getattr(args, "pin_memory", False)),
                                  sampler=val_sampler,
                                  drop_last=False,
-                                 collate_fn=OCIDVLGDataset.collate_fn)
+                                 collate_fn=val_data.collate_fn)
 
     best_IoU = -1.0
     best_j_index = -1.0
@@ -597,13 +603,19 @@ def main_worker(local_rank, args):
 
                 if save_best_j:
                     j1 = float(j_index[0])
-                    j5 = float(j_index[1]) if len(j_index) > 1 else 0.0
+                    if str(getattr(args, "evaluation_protocol", "")).lower() == "vcot_official":
+                        metric_suffix = f"GraspSR_{100.0 * j1:.2f}"
+                    else:
+                        j5 = float(j_index[1]) if len(j_index) > 1 else 0.0
+                        metric_suffix = (
+                            f"J1_{100.0 * j1:.2f}_J5_{100.0 * j5:.2f}"
+                        )
                     best_name = _replace_metric_alias(
                         temporary_checkpoint,
                         args.output_dir,
                         "best",
                         epoch_log,
-                        f"J1_{100.0 * j1:.2f}_J5_{100.0 * j5:.2f}",
+                        metric_suffix,
                     )
                     logger.info("Replaced best checkpoint: {}", best_name)
 

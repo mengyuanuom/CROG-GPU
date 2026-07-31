@@ -128,9 +128,53 @@ ASCEND_RT_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 torchrun \
 ```
 
 
+## VCoT/Grasp-Anything DROG-OFF
+
+`config/vcot/drogoff.yaml` trains DROG-OFF on the compact VCoT subset. The
+default data root is `datasets/graspanything-vcot` and must contain:
+
+```text
+datasets/graspanything-vcot/
+├── image/*.jpg
+├── mask/*.npy
+├── grasp_label_positive/*.pt
+└── split/vcot/{train,test_seen,test_unseen}.csv
+```
+
+Training uses the official `train.csv` split and validates on `test_unseen.csv`.
+It keeps the repository-wide 24-epoch schedule: no validation in epochs 1-10,
+recovery checkpoints at epochs 5 and 10, and validation every epoch from 11.
+The global batch size is 32 and the learning rate is `4e-4`.
+
+Train on eight NPUs:
+
+```bash
+bash tools/train_8npu.sh config/vcot/drogoff.yaml
+```
+
+For a non-default location, set `DATA_ROOT` (and optionally `SPLIT_ROOT`) before
+the same command. Train on one selected NPU with:
+
+```bash
+ASCEND_RT_VISIBLE_DEVICES=3 python3 train_crog.py --config config/vcot/drogoff.yaml
+```
+
+VCoT evaluation uses the public paper protocol rather than CROG's historical
+raster scorer: exactly one predicted grasp, continuous rotated-rectangle IoU
+`>= 0.25`, and 180-degree-periodic angle difference `<= 30` degrees. The metric
+is logged as `GraspSR`, and the rolling best is named like
+`best_epoch_011_GraspSR_72.34.pth`. Evaluate the unseen split with:
+
+```bash
+ASCEND_RT_VISIBLE_DEVICES=3 python3 test_crog.py \
+  --config config/vcot/drogoff.yaml \
+  --opts TRAIN.resume exp/vcot/drogoff_vcot_8npu_TIMESTAMP/best_epoch_XXX_GraspSR_XX.XX.pth
+```
+
+The existing `config/OCID-VLG/*.yaml` profiles continue to use the unchanged
+CROG legacy J@1/J@5 evaluation path.
 
 ## DROG and DROG-OFF with the CROG scoring protocol
-
 `config/OCID-VLG/drog.yaml` and `config/OCID-VLG/drogoff.yaml` select the
 DINOv2/CLIP-B16 models. DROG-OFF keeps its offset post-processing, while all
 resulting grasp rectangles are judged by CROG's scoring functions. The launcher
