@@ -291,6 +291,28 @@ def main_worker(local_rank, args):
 
     # build model
     model, param_list = build_model(args)
+    training_grasp_size_activation = getattr(
+        model, "grasp_size_loss_activation", None
+    )
+    requested_grasp_size_activation = str(
+        getattr(args, "grasp_size_activation", "sigmoid")
+    ).strip().lower()
+    if training_grasp_size_activation is not None:
+        training_grasp_size_activation = str(
+            training_grasp_size_activation
+        ).strip().lower()
+        if requested_grasp_size_activation not in {
+            "auto", training_grasp_size_activation
+        }:
+            logger.warning(
+                "Training validation overrides grasp_size_activation={} with {} "
+                "to match the model loss.",
+                requested_grasp_size_activation,
+                training_grasp_size_activation,
+            )
+        args.grasp_size_activation = training_grasp_size_activation
+    elif requested_grasp_size_activation == "auto":
+        raise ValueError("auto grasp-size decoding requires model metadata")
     needs_offset = bool(getattr(model, "supports_offset", False))
     logger.info(
         "Model architecture: {}, offset supervision: {}",
@@ -593,6 +615,7 @@ def main_worker(local_rank, args):
                     'last_iou': last_iou,
                     'last_prec': last_prec_dict,
                     'last_j_index': last_j_index,
+                    'grasp_size_activation': training_grasp_size_activation,
                     'state_dict': model.state_dict(),
                     'optimizer': optimizer.state_dict(),
                     'scheduler': scheduler.state_dict()

@@ -11,6 +11,7 @@ class DROGOFF(DROG):
     """Combine DROG's DINOv2/CLIP fusion with CROG-OFF-style offsets."""
 
     supports_offset = True
+    grasp_size_loss_activation = "sigmoid"
 
     def __init__(self, cfg):
         super().__init__(cfg)

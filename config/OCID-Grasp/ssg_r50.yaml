@@ -35,11 +35,11 @@ TRAIN:
   exp_name: "SSG-R50-OCID-Grasp"
   output_folder: "exp/SSG-R50-OCID-Grasp"
   save_freq: 0
-  base_lr: 0.0003
+  base_lr: 0.0001
   lr_decay: 0.95
   momentum: 0.9
   weight_decay: 0.0005
-  milestones: [15]
+  milestones: [20]
   start_epoch: 0
   epochs: 24
   max_norm: 0.

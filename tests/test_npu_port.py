@@ -1,7 +1,11 @@
 from pathlib import Path
 import re
 import unittest
-from utils.config import CfgNode, merge_cfg_from_list
+from utils.config import (
+    CfgNode,
+    merge_cfg_from_list,
+    resolve_grasp_size_activation,
+)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -14,12 +18,27 @@ class OfficialCROGNPUConfigTest(unittest.TestCase):
         merged = merge_cfg_from_list(cfg, ["TRAIN.resume", checkpoint_path])
         self.assertEqual(merged.resume, checkpoint_path)
 
+    def test_auto_grasp_size_activation_matches_checkpoint_training(self):
+        self.assertEqual(resolve_grasp_size_activation("auto", {}), "clamp")
+        self.assertEqual(
+            resolve_grasp_size_activation(
+                "auto", {"grasp_size_activation": "sigmoid"}
+            ),
+            "sigmoid",
+        )
+        self.assertEqual(
+            resolve_grasp_size_activation(
+                "clamp", {"grasp_size_activation": "sigmoid"}
+            ),
+            "clamp",
+        )
+
     def test_official_training_hyperparameters_are_preserved(self):
         path = ROOT / "config" / "OCID-VLG" / "crog_multiple_r50.yaml"
         source = path.read_text(encoding="utf-8")
         expected_lines = (
             r"^\s*epochs:\s*24\s*$",
-            r"^\s*milestones:\s*\[15\]\s*$",
+            r"^\s*milestones:\s*\[20\]\s*$",
             r"^\s*batch_size:\s*32\b",
             r"^\s*batch_size_val:\s*32\b",
             r"^\s*base_lr:\s*0\.0001\b",
@@ -40,7 +59,7 @@ class OfficialCROGNPUConfigTest(unittest.TestCase):
             with self.subTest(pattern=pattern):
                 self.assertRegex(source, re.compile(pattern, re.MULTILINE))
 
-    def test_all_yaml_batches_and_schedules_are_uniform(self):
+    def test_all_yaml_training_profiles_are_uniform(self):
         config_dir = ROOT / "config"
         for path in sorted(config_dir.rglob("*.yaml")):
             source = path.read_text(encoding="utf-8")
@@ -48,7 +67,8 @@ class OfficialCROGNPUConfigTest(unittest.TestCase):
                 self.assertRegex(source, r"(?m)^\s*batch_size:\s*32\b")
                 self.assertRegex(source, r"(?m)^\s*batch_size_val:\s*32\b")
                 self.assertRegex(source, r"(?m)^\s*epochs:\s*24\s*$")
-                self.assertRegex(source, r"(?m)^\s*milestones:\s*\[15\]\s*$")
+                self.assertRegex(source, r"(?m)^\s*milestones:\s*\[20\]\s*$")
+                self.assertRegex(source, r"(?m)^\s*base_lr:\s*0\.0001\b")
                 self.assertRegex(source, r"(?m)^\s*save_freq:\s*0\s*$")
                 self.assertRegex(source, r"(?m)^\s*val_freq:\s*1\s*$")
                 self.assertRegex(source, r"(?m)^\s*val_start_epoch:\s*11\s*$")
@@ -382,7 +402,7 @@ class OfficialCROGNPUConfigTest(unittest.TestCase):
                 )
                 self.assertRegex(
                     source,
-                    r"(?m)^\s*grasp_size_activation:\s*sigmoid\s*$",
+                    r"(?m)^\s*grasp_size_activation:\s*auto\s*$",
                 )
                 self.assertRegex(
                     source,
@@ -414,20 +434,23 @@ class OfficialCROGNPUConfigTest(unittest.TestCase):
 
     def test_drog_configs_match_the_requested_global_schedule(self):
         expected_optimization = {
-            "drog.yaml": ("drog", 32, 32, "0.0001"),
-            "drogoff.yaml": ("drogoff", 32, 32, "0.0004"),
+            "drog.yaml": ("drog", 32, 32, "0.0001", 20),
+            "drogoff.yaml": ("drogoff", 32, 32, "0.0001", 20),
         }
         for name, (
             architecture,
             batch_size,
             batch_size_val,
             base_lr,
+            milestone,
         ) in expected_optimization.items():
             source = (ROOT / "config" / "OCID-VLG" / name).read_text(encoding="utf-8")
             with self.subTest(config=name):
                 self.assertRegex(source, rf"(?m)^\s*architecture:\s*{architecture}\s*$")
                 self.assertRegex(source, r"(?m)^\s*epochs:\s*24\s*$")
-                self.assertRegex(source, r"(?m)^\s*milestones:\s*\[15\]\s*$")
+                self.assertRegex(
+                    source, rf"(?m)^\s*milestones:\s*\[{milestone}\]\s*$"
+                )
                 self.assertRegex(source, r"(?m)^\s*save_freq:\s*0\s*$")
                 self.assertRegex(source, r"(?m)^\s*val_freq:\s*1\s*$")
                 self.assertRegex(source, r"(?m)^\s*val_start_epoch:\s*11\s*$")

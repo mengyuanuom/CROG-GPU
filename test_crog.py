@@ -131,6 +131,16 @@ def main():
     if os.path.isfile(args.resume):
         logger.info("=> loading checkpoint '{}'".format(args.resume))
         checkpoint = torch.load(args.resume, map_location="cpu")
+        requested_activation = getattr(
+            args, "grasp_size_activation", "sigmoid"
+        )
+        args.grasp_size_activation = config.resolve_grasp_size_activation(
+            requested_activation, checkpoint
+        )
+        logger.info(
+            "Grasp-size activation: requested={}, resolved={}",
+            requested_activation, args.grasp_size_activation,
+        )
         state_dict = checkpoint.get("state_dict", checkpoint)
         state_dict = {
             key.removeprefix("module."): value
