@@ -46,14 +46,14 @@ python -u train_ssg.py --config config/OCID-Grasp/ssg_r50.yaml
 Every YAML under `config/` sets both training and validation batch size to
 `32`. CROG and DROG use Adam at `1e-4`; DROG-OFF uses `4e-4`. Every profile
 runs for 24 epochs with one learning-rate milestone at epoch 15.
-Every YAML also uses `save_freq: 1`. The shared `train_crog.py` runner saves a
-snapshot after every completed epoch.
+Every YAML uses `save_freq: 0`: epoch-by-epoch snapshots are disabled. The
+runner keeps only a rolling `last_model.pth` for recovery plus the current
+best IoU/J1 checkpoints.
 Each training launch appends a millisecond timestamp to `TRAIN.exp_name` and
 therefore writes to a new directory, including resume launches. For example:
 
 ```text
 exp/ocid_vlg/ggcnnclip_ocid_vlg_8npu_20260731_143025_123/
-epoch_005_model.pth
 best_iou_epoch_005_iou_80.60.pth
 best_j1_epoch_005_j1_90.92_j5_93.69.pth
 ```

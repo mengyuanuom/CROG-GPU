@@ -29,7 +29,7 @@ class OfficialCROGNPUConfigTest(unittest.TestCase):
             r"^\s*pin_memory:\s*False\s*$",
             r"^\s*with_depth:\s*False\s*$",
             r"^\s*resume:\s*$",
-            r"^\s*save_freq:\s*1\s*$",
+            r"^\s*save_freq:\s*0\s*$",
             r"^\s*val_freq:\s*5\b",
             r"^\s*dist_backend:\s*['\"]hccl['\"]\s*$",
             r"^\s*dist_url:\s*env://\s*$",
@@ -47,7 +47,7 @@ class OfficialCROGNPUConfigTest(unittest.TestCase):
                 self.assertRegex(source, r"(?m)^\s*batch_size_val:\s*32\b")
                 self.assertRegex(source, r"(?m)^\s*epochs:\s*24\s*$")
                 self.assertRegex(source, r"(?m)^\s*milestones:\s*\[15\]\s*$")
-                self.assertRegex(source, r"(?m)^\s*save_freq:\s*1\s*$")
+                self.assertRegex(source, r"(?m)^\s*save_freq:\s*0\s*$")
 
     def test_training_path_has_no_cuda_or_nccl_calls(self):
         paths = (
@@ -224,7 +224,9 @@ class OfficialCROGNPUConfigTest(unittest.TestCase):
         self.assertIn("epoch_log == args.epochs", source)
         self.assertIn("'evaluated': do_eval", source)
         self.assertIn("'last_eval_epoch': last_eval_epoch", source)
-        self.assertIn('f"epoch_{epoch_log:03d}_model.pth"', source)
+        self.assertNotIn('f"epoch_{epoch_log:03d}_model.pth"', source)
+        self.assertNotIn("_replace_epoch_alias", source)
+        self.assertIn('"last_model.pth"', source)
         self.assertIn('"best_iou",', source)
         self.assertIn('f"iou_{100.0 * float(iou):.2f}"', source)
         self.assertIn('"best_j1",', source)
@@ -377,7 +379,7 @@ class OfficialCROGNPUConfigTest(unittest.TestCase):
                 self.assertRegex(source, rf"(?m)^\s*architecture:\s*{architecture}\s*$")
                 self.assertRegex(source, r"(?m)^\s*epochs:\s*24\s*$")
                 self.assertRegex(source, r"(?m)^\s*milestones:\s*\[15\]\s*$")
-                self.assertRegex(source, r"(?m)^\s*save_freq:\s*1\s*$")
+                self.assertRegex(source, r"(?m)^\s*save_freq:\s*0\s*$")
                 self.assertRegex(source, rf"(?m)^\s*batch_size:\s*{batch_size}\b")
                 self.assertRegex(
                     source,

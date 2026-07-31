@@ -47,17 +47,6 @@ def _replace_with_link_or_copy(source, target):
     os.replace(temporary, target)
 
 
-def _replace_epoch_alias(source, output_dir, prefix, epoch):
-    """Keep one epoch-labelled alias for a moving checkpoint series."""
-    output_dir = Path(output_dir)
-    target = output_dir / f"{prefix}_epoch_{int(epoch):03d}.pth"
-    _replace_with_link_or_copy(source, target)
-    for previous in output_dir.glob(f"{prefix}_epoch_*.pth"):
-        if previous != target:
-            previous.unlink()
-    return target
-
-
 def _replace_metric_alias(source, output_dir, prefix, epoch, metric_suffix):
     """Keep one metric-labelled best checkpoint for a moving best series."""
     output_dir = Path(output_dir)
@@ -450,19 +439,15 @@ def main_worker(local_rank, args):
                 .format(args.resume))
 
     val_freq = int(getattr(args, "val_freq", 1))
-    save_freq = int(getattr(args, "save_freq", 1))
     evaluate_enabled = bool(getattr(args, "evaluate", True))
     if evaluate_enabled and val_freq <= 0:
         raise ValueError(f"val_freq must be positive, got {val_freq}")
-    if save_freq < 0:
-        raise ValueError(f"save_freq must be non-negative, got {save_freq}")
     if args.rank == 0:
         logger.info(
             "Validation schedule: enabled={}, every {} epoch(s), "
-            "always on final epoch; checkpoint snapshots every {} epoch(s)",
+            "always on final epoch; checkpoint policy=rolling last + best only",
             evaluate_enabled,
             val_freq,
-            save_freq if save_freq else "disabled",
         )
 
     # start training
@@ -544,18 +529,6 @@ def main_worker(local_rank, args):
             )
             torch.save(checkpoint, temporary_lastname)
             os.replace(temporary_lastname, lastname)
-            _replace_epoch_alias(
-                lastname, args.output_dir, "last", epoch_log
-            )
-
-            if save_freq and (
-                epoch_log % save_freq == 0 or epoch_log == args.epochs
-            ):
-                epoch_name = os.path.join(
-                    args.output_dir,
-                    f"epoch_{epoch_log:03d}_model.pth",
-                )
-                _replace_with_link_or_copy(lastname, epoch_name)
 
             if improved_iou:
                 bestname = _replace_metric_alias(

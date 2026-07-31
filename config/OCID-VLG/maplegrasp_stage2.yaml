@@ -50,7 +50,7 @@ TRAIN:
   print_freq: 100
   exp_name: maplegrasp_stage2_ocid_vlg_8npu
   output_folder: exp/ocid_vlg
-  save_freq: 1
+  save_freq: 0
   val_freq: 1
   resume:
   evaluate: True

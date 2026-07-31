@@ -62,7 +62,7 @@ TRAIN:
   # Resume & Save
   exp_name: drog_ocid_vlg_8npu
   output_folder: exp/OCID-VLG
-  save_freq: 1
+  save_freq: 0
   val_freq: 5
   weight:  # path to initial weight (default: none)
   resume: # path to latest checkpoint (default: none)

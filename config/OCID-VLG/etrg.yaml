@@ -51,7 +51,7 @@ TRAIN:
   pin_memory: False
   exp_name: etrg_r50_ocid_vlg_8npu
   output_folder: exp/ocid_vlg
-  save_freq: 1
+  save_freq: 0
   val_freq: 5
   weight:
   resume:

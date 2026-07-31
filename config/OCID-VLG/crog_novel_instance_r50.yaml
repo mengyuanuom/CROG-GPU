@@ -38,7 +38,7 @@ TRAIN:
   # Resume & Save
   exp_name: CROG_novel_ins_R50
   output_folder: exp/OCID-VLG_novel_ins
-  save_freq: 1
+  save_freq: 0
   weight:  # path to initial weight (default: none)
   resume:  # path to resume weight (default: none)
   evaluate: True  # evaluate on validation set, extra gpu memory needed and small batch_size_val is recommend

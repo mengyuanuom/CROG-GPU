@@ -40,7 +40,7 @@ TRAIN:
   # Resume & Save
   exp_name: CROG_multiple_R50_wo_cont
   output_folder: exp/OCID-VLG_multiple
-  save_freq: 1
+  save_freq: 0
   weight:  # path to initial weight (default: none)
   resume:  # exp/OCID-VLG_multiple/CROG_multiple_R50/best_jindex_model.pth
   evaluate: True  # evaluate on validation set, extra gpu memory needed and small batch_size_val is recommend
