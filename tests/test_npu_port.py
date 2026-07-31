@@ -174,6 +174,15 @@ class OfficialCROGNPUConfigTest(unittest.TestCase):
             config, r"(?m)^\s*optimizer_foreach:\s*False\s*$"
         )
 
+    def test_crog_evaluator_always_removes_the_mask_channel(self):
+        engine = (
+            ROOT / "engine" / "crog_engine.py"
+        ).read_text(encoding="utf-8")
+        extraction = "ins_mask_preds[idx].squeeze().cpu().numpy()"
+        self.assertEqual(engine.count(extraction), 3)
+        self.assertNotIn(
+            "ins_mask_preds[idx].cpu().numpy()", engine
+        )
     def test_source_has_no_removed_numpy_scalar_aliases(self):
         removed = (
             re.compile(r"\bnp\.int0\b"),

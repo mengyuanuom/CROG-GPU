@@ -318,7 +318,7 @@ def validate_with_grasp(val_loader, model, epoch, args):
             ori_size = ori_sizes[idx]
             h, w = ori_size
 
-            ins_mask_pred = ins_mask_preds[idx].cpu().numpy()
+            ins_mask_pred = ins_mask_preds[idx].squeeze().cpu().numpy()
             grasp_qua_mask_pred = grasp_qua_mask_preds[idx].squeeze().cpu().numpy()
             grasp_sin_mask_pred = grasp_sin_mask_preds[idx].squeeze().cpu().numpy()
             grasp_cos_mask_pred = grasp_cos_mask_preds[idx].squeeze().cpu().numpy()
@@ -638,7 +638,7 @@ def inference_with_grasp(test_loader, model, args):
             sent = sentences[idx]
             img_path = img_paths[idx]
 
-            ins_mask_pred = ins_mask_preds[idx].cpu().numpy()
+            ins_mask_pred = ins_mask_preds[idx].squeeze().cpu().numpy()
             grasp_qua_mask_pred = grasp_qua_mask_preds[idx].squeeze().cpu().numpy()
             grasp_sin_mask_pred = grasp_sin_mask_preds[idx].squeeze().cpu().numpy()
             grasp_cos_mask_pred = grasp_cos_mask_preds[idx].squeeze().cpu().numpy()
