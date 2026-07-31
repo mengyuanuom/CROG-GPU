@@ -55,6 +55,8 @@ Only the accelerator/runtime path is changed:
   disabled because torch_npu SyncBatchNorm can produce device-side
   AIVector/MTE faults during multi-NPU training;
 - CPU checkpoint loading followed by explicit optimizer-state migration.
+- per-tensor Adam updates by default (`foreach=False`) to avoid Ascend
+  `ForeachAddListV2` dynamic-kernel failures.
 
 Install the PyTorch/torch_npu pair matching the server's CANN release, then:
 

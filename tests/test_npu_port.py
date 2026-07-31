@@ -158,6 +158,22 @@ class OfficialCROGNPUConfigTest(unittest.TestCase):
         self.assertIn("if not enabled:\n        return NoOpGradScaler()", runtime)
         self.assertNotIn("TRAIN.amp", launcher)
 
+    def test_adam_avoids_the_unstable_npu_foreach_kernel(self):
+        trainer = (ROOT / "train_crog.py").read_text(encoding="utf-8")
+        config = (
+            ROOT / "config" / "OCID-VLG" / "etrg.yaml"
+        ).read_text(encoding="utf-8")
+        self.assertIn(
+            'getattr(args, "optimizer_foreach", False)', trainer
+        )
+        self.assertIn("foreach=optimizer_foreach", trainer)
+        self.assertIn(
+            'param_group["foreach"] = optimizer_foreach', trainer
+        )
+        self.assertRegex(
+            config, r"(?m)^\s*optimizer_foreach:\s*False\s*$"
+        )
+
     def test_source_has_no_removed_numpy_scalar_aliases(self):
         removed = (
             re.compile(r"\bnp\.int0\b"),

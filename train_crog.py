@@ -219,9 +219,14 @@ def main_worker(local_rank, args):
     logger.info(args)
 
     # build optimizer & lr scheduler
+    # Ascend's multi-tensor ForeachAdd kernel can fail for heterogeneous
+    # parameter lists (ETRG is a common trigger). Use the stable per-tensor
+    # Adam path by default.
+    optimizer_foreach = bool(getattr(args, "optimizer_foreach", False))
     optimizer = torch.optim.Adam(param_list,
                                  lr=args.base_lr,
-                                 weight_decay=args.weight_decay)
+                                 weight_decay=args.weight_decay,
+                                 foreach=optimizer_foreach)
     scheduler = MultiStepLR(optimizer,
                             milestones=args.milestones,
                             gamma=args.lr_decay)
@@ -348,6 +353,8 @@ def main_worker(local_rank, args):
             )
             model.load_state_dict(checkpoint['state_dict'])
             optimizer.load_state_dict(checkpoint['optimizer'])
+            for param_group in optimizer.param_groups:
+                param_group["foreach"] = optimizer_foreach
             for state in optimizer.state.values():
                 for key, value in state.items():
                     if torch.is_tensor(value):

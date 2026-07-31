@@ -47,6 +47,7 @@ TRAIN:
   print_freq: 100
   amp: False
   optimizer: adam
+  optimizer_foreach: False
   pin_memory: False
   exp_name: etrg_r50_ocid_vlg_8npu
   output_folder: exp/ocid_vlg
