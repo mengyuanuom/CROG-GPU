@@ -57,6 +57,28 @@ def _grasp_size_factor(args):
     return factor
 
 
+def _grasp_size_activation(args):
+    activation = str(
+        getattr(args, "grasp_size_activation", "sigmoid")
+    ).strip().lower()
+    aliases = {
+        "sigmoid": "sigmoid",
+        "clamp": "clamp",
+        "raw_clamp": "clamp",
+    }
+    if activation not in aliases:
+        raise ValueError(
+            "grasp_size_activation must be sigmoid, clamp, or raw_clamp"
+        )
+    return aliases[activation]
+
+
+def _decode_grasp_size_map(prediction, args):
+    if _grasp_size_activation(args) == "sigmoid":
+        return torch.sigmoid(prediction)
+    return torch.clamp(prediction, 0.0, 1.0)
+
+
 def _reduce_iou_statistics(values, device):
     local_values = torch.as_tensor(
         values,
@@ -392,9 +414,9 @@ def validate_with_grasp(val_loader, model, epoch, args):
         # Interpolate the predicted ins mask to the same size of input image
         ins_mask_preds = torch.sigmoid(ins_mask_preds)
         grasp_qua_mask_preds = torch.sigmoid(grasp_qua_mask_preds)
-        grasp_wid_mask_preds = torch.sigmoid(grasp_wid_mask_preds)
+        grasp_wid_mask_preds = _decode_grasp_size_map(grasp_wid_mask_preds, args)
         if grasp_short_mask_preds is not None:
-            grasp_short_mask_preds = torch.sigmoid(grasp_short_mask_preds)
+            grasp_short_mask_preds = _decode_grasp_size_map(grasp_short_mask_preds, args)
         if (
             grasp_off_mask_preds is not None
             and grasp_off_mask_preds.shape[-2:] != image.shape[-2:]
@@ -744,9 +766,9 @@ def inference_with_grasp(test_loader, model, args):
         # Interpolate the predicted ins mask to the same size of input image
         ins_mask_preds = torch.sigmoid(ins_mask_preds)
         grasp_qua_mask_preds = torch.sigmoid(grasp_qua_mask_preds)
-        grasp_wid_mask_preds = torch.sigmoid(grasp_wid_mask_preds)
+        grasp_wid_mask_preds = _decode_grasp_size_map(grasp_wid_mask_preds, args)
         if grasp_short_mask_preds is not None:
-            grasp_short_mask_preds = torch.sigmoid(grasp_short_mask_preds)
+            grasp_short_mask_preds = _decode_grasp_size_map(grasp_short_mask_preds, args)
         if (
             grasp_off_mask_preds is not None
             and grasp_off_mask_preds.shape[-2:] != image.shape[-2:]

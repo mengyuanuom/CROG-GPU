@@ -321,6 +321,16 @@ class OfficialCROGNPUConfigTest(unittest.TestCase):
         self.assertIn(
             'getattr(args, "filter_grasps_by_segmentation", False)', engine
         )
+        self.assertIn(
+            'getattr(args, "grasp_size_activation", "sigmoid")', engine
+        )
+        self.assertIn(
+            "return torch.clamp(prediction, 0.0, 1.0)",
+            engine,
+        )
+        self.assertEqual(
+            engine.count("_decode_grasp_size_map(grasp_wid_mask_preds, args)"), 2
+        )
         self.assertLess(
             inference.index("detect_grasps("),
             inference.index("_apply_model_offset("),
@@ -356,6 +366,10 @@ class OfficialCROGNPUConfigTest(unittest.TestCase):
                 self.assertRegex(
                     source,
                     rf"(?m)^\s*offset_resample_geometry:\s*{resample}\s*$",
+                )
+                self.assertRegex(
+                    source,
+                    r"(?m)^\s*grasp_size_activation:\s*sigmoid\s*$",
                 )
                 self.assertRegex(source, r"(?m)^\s*batch_size:\s*32\b")
                 self.assertRegex(source, r"(?m)^\s*batch_size_val:\s*32\b")

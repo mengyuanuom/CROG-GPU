@@ -82,6 +82,7 @@ Distributed:
 TEST:
   test_split: test
   evaluation_protocol: crog_legacy
+  grasp_size_activation: sigmoid
   use_offset_at_inference: False
   filter_grasps_by_segmentation: False
   offset_resample_geometry: False

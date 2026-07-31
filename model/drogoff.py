@@ -128,10 +128,12 @@ class DROGOFF(DROG):
         qua_loss = F.smooth_l1_loss(qua, grasp_qua_mask)
         sin_loss = F.smooth_l1_loss(sin, grasp_sin_mask)
         cos_loss = F.smooth_l1_loss(cos, grasp_cos_mask)
-        width_loss = F.smooth_l1_loss(width, grasp_wid_mask)
+        width_loss = F.smooth_l1_loss(
+            torch.sigmoid(width), grasp_wid_mask
+        )
 
         short_side_loss = (
-            F.smooth_l1_loss(short_side, grasp_short_mask)
+            F.smooth_l1_loss(torch.sigmoid(short_side), grasp_short_mask)
             if self.predicts_grasp_short_side
             else None
         )

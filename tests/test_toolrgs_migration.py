@@ -104,7 +104,7 @@ class ToolRGSModelMigrationTest(unittest.TestCase):
             "ins_mask_pred = (ins_mask_pred > _segmentation_threshold(args))",
             "return [1, 5]",
             "torch.sigmoid(grasp_qua_mask_preds)",
-            "torch.sigmoid(grasp_wid_mask_preds)",
+            "_decode_grasp_size_map(grasp_wid_mask_preds, args)",
             "return calculate_jacquard_index(grasp_predictions, grasp_targets)",
         )
         for token in expected:

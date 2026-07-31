@@ -94,6 +94,17 @@ class VCoTDrogoffSupportTest(unittest.TestCase):
         self.assertIn("short_side=None", offset_eval)
         self.assertIn("restore_grasp_size_scale", engine)
 
+    def test_grasp_size_losses_use_the_inference_value_range(self):
+        model = (ROOT / "model" / "drogoff.py").read_text(encoding="utf-8")
+        self.assertIn(
+            "torch.sigmoid(width), grasp_wid_mask",
+            model,
+        )
+        self.assertIn(
+            "torch.sigmoid(short_side), grasp_short_mask",
+            model,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
