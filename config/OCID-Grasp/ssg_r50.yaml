@@ -57,7 +57,7 @@ TRAIN:
   max_detections: 100
   vis_protos: False
   print_freq: 10
-  val_freq: 25
+  val_freq: 1
   weight:  # path to initial weight (default: none)
   resume:  exp/SSG-R50-OCID-Grasp/SSG-R50-OCID-Grasp/last_model.pth
   evaluate: True

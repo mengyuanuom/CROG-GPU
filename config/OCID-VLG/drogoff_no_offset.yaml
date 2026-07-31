@@ -65,7 +65,7 @@ TRAIN:
   offset_loss_weight: 1.0
   output_folder: exp/OCID-VLG
   save_freq: 0
-  val_freq: 5
+  val_freq: 1
   weight:  # path to initial weight (default: none)
   resume: # path to latest checkpoint (default: none)
   evaluate: True

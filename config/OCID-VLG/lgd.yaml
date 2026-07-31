@@ -45,7 +45,7 @@ TRAIN:
   exp_name: lgd_ocid_vlg_8npu
   output_folder: exp/ocid_vlg
   save_freq: 0
-  val_freq: 5
+  val_freq: 1
   weight:
   resume:
   evaluate: True

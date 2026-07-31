@@ -84,13 +84,24 @@ def _resolve_timestamped_checkpoint(checkpoint_path):
     if requested.is_file():
         return requested
     base_dir = requested.parent
+    run_directories = list(base_dir.parent.glob(f"{base_dir.name}_*"))
     candidates = [
-        candidate
-        for candidate in base_dir.parent.glob(
-            f"{base_dir.name}_*/{requested.name}"
-        )
-        if candidate.is_file()
+        run_directory / requested.name
+        for run_directory in run_directories
+        if (run_directory / requested.name).is_file()
     ]
+    legacy_patterns = {
+        "best_iou_model.pth": "best_epoch_*_IoU_*.pth",
+        "best_jindex_model.pth": "best_epoch_*_J1_*_J5_*.pth",
+    }
+    metric_pattern = legacy_patterns.get(requested.name)
+    if not candidates and metric_pattern:
+        candidates = [
+            candidate
+            for run_directory in run_directories
+            for candidate in run_directory.glob(metric_pattern)
+            if candidate.is_file()
+        ]
     if not candidates:
         return requested
     return max(candidates, key=lambda candidate: candidate.stat().st_mtime_ns)
@@ -379,8 +390,8 @@ def main_worker(local_rank, args):
                                  drop_last=False,
                                  collate_fn=OCIDVLGDataset.collate_fn)
 
-    best_IoU = 0.0
-    best_j_index = 0.0
+    best_IoU = -1.0
+    best_j_index = -1.0
     last_eval_epoch = 0
     last_iou = None
     last_prec_dict = {}
@@ -467,7 +478,10 @@ def main_worker(local_rank, args):
         if do_eval:
             # Official MapleGrasp Stage 1 validates segmentation only; Stage 2
             # validates segmentation plus grasp maps through the CROG scorer.
-            if bool(getattr(model.module, "segmentation_only", False)):
+            segmentation_only = bool(
+                getattr(model.module, "segmentation_only", False)
+            )
+            if segmentation_only:
                 iou, prec_dict, j_index = validate_without_grasp(
                     val_loader, model, epoch_log, args
                 )
@@ -497,9 +511,9 @@ def main_worker(local_rank, args):
         # save model
         if dist.get_rank() == 0:
             lastname = os.path.join(args.output_dir, "last_model.pth")
-            improved_iou = bool(do_eval and iou >= best_IoU)
+            improved_iou = bool(do_eval and iou > best_IoU)
             improved_j = bool(
-                do_eval and j_index and j_index[0] >= best_j_index
+                do_eval and j_index and j_index[0] > best_j_index
             )
             if improved_iou:
                 best_IoU = iou
@@ -530,32 +544,24 @@ def main_worker(local_rank, args):
             torch.save(checkpoint, temporary_lastname)
             os.replace(temporary_lastname, lastname)
 
-            if improved_iou:
-                bestname = _replace_metric_alias(
+            if do_eval and segmentation_only and improved_iou:
+                _replace_metric_alias(
                     lastname,
                     args.output_dir,
-                    "best_iou",
+                    "best",
                     epoch_log,
-                    f"iou_{100.0 * float(iou):.2f}",
-                )
-                _replace_with_link_or_copy(
-                    bestname,
-                    os.path.join(args.output_dir, "best_iou_model.pth"),
+                    f"IoU_{100.0 * float(iou):.2f}",
                 )
 
-            if improved_j:
+            if do_eval and not segmentation_only and improved_j:
                 j1 = float(j_index[0])
                 j5 = float(j_index[1]) if len(j_index) > 1 else 0.0
-                bestname = _replace_metric_alias(
+                _replace_metric_alias(
                     lastname,
                     args.output_dir,
-                    "best_j1",
+                    "best",
                     epoch_log,
-                    f"j1_{100.0 * j1:.2f}_j5_{100.0 * j5:.2f}",
-                )
-                _replace_with_link_or_copy(
-                    bestname,
-                    os.path.join(args.output_dir, "best_jindex_model.pth"),
+                    f"J1_{100.0 * j1:.2f}_J5_{100.0 * j5:.2f}",
                 )
 
         empty_cache()
@@ -564,7 +570,9 @@ def main_worker(local_rank, args):
     # if dist.get_rank() == 0:
     #     wandb.finish()
 
-    logger.info("* Best IoU={} * ".format(best_IoU))
+    logger.info("* Best IoU={}  Best J1={} *".format(
+        best_IoU, best_j_index
+    ))
     total_time = time.time() - start_time
     total_time_str = str(datetime.timedelta(seconds=int(total_time)))
     logger.info('* Training time {} *'.format(total_time_str))

@@ -49,7 +49,7 @@ TRAIN:
   offset_loss_weight: 1.0
   output_folder: exp/ocid_vlg
   save_freq: 0
-  val_freq: 5
+  val_freq: 1
   weight:
   resume:
   evaluate: True  # evaluate on validation set, extra NPU memory needed and small batch_size_val is recommend

@@ -181,7 +181,7 @@ class ToolRGSModelMigrationTest(unittest.TestCase):
         self.assertIn("def _load_maplegrasp_stage1", source)
         self.assertIn("def _resolve_timestamped_checkpoint", source)
         self.assertIn(
-            'f"{base_dir.name}_*/{requested.name}"', source
+            '"best_iou_model.pth": "best_epoch_*_IoU_*.pth"', source
         )
         self.assertIn("model.load_state_dict(state_dict, strict=False)", source)
         self.assertIn('"module.proj.vis_grasp.weight"', source)

@@ -46,20 +46,21 @@ python -u train_ssg.py --config config/OCID-Grasp/ssg_r50.yaml
 Every YAML under `config/` sets both training and validation batch size to
 `32`. CROG and DROG use Adam at `1e-4`; DROG-OFF uses `4e-4`. Every profile
 runs for 24 epochs with one learning-rate milestone at epoch 15.
-Every YAML uses `save_freq: 0`: epoch-by-epoch snapshots are disabled. The
-runner keeps only a rolling `last_model.pth` for recovery plus the current
-best IoU/J1 checkpoints.
+Every YAML uses `save_freq: 0` and `val_freq: 1`: validation runs after every
+epoch, but epoch-by-epoch model snapshots are disabled. The runner keeps one
+rolling `last_model.pth` for recovery. Grasp models keep exactly one best
+checkpoint selected by J1; a new J1 best deletes and replaces the previous one.
 Each training launch appends a millisecond timestamp to `TRAIN.exp_name` and
 therefore writes to a new directory, including resume launches. For example:
 
 ```text
 exp/ocid_vlg/ggcnnclip_ocid_vlg_8npu_20260731_143025_123/
-best_iou_epoch_005_iou_80.60.pth
-best_j1_epoch_005_j1_90.92_j5_93.69.pth
+best_epoch_005_J1_90.92_J5_93.69.pth
 ```
 
-The stable aliases `best_iou_model.pth` and `best_jindex_model.pth` are kept
-for evaluation, resume, and MapleGrasp Stage-2 compatibility.
+Pure segmentation stages use `best_epoch_005_IoU_80.60.pth`. MapleGrasp
+Stage 2 automatically resolves its legacy Stage-1 path to the newest
+timestamped epoch+IoU checkpoint.
 Only the accelerator/runtime path is changed:
 
 - explicit `torch_npu` device calls instead of CUDA calls;
@@ -106,7 +107,7 @@ Evaluate a CROG checkpoint on one NPU with:
 ASCEND_RT_VISIBLE_DEVICES=0 python3 test_crog.py \
   --config config/OCID-VLG/crog_multiple_r50.yaml \
   --opts DATA.root_path datasets/OCID-VLG \
-         TRAIN.resume exp/OCID-VLG_multiple_npu/CROG_official_multiple_R50_8npu/best_jindex_model.pth \
+         TRAIN.resume exp/OCID-VLG_multiple_npu/CROG_official_multiple_R50_8npu/best_epoch_XXX_J1_XX.XX_J5_XX.XX.pth \
          TEST.test_split test
 ```
 
@@ -118,7 +119,7 @@ ASCEND_RT_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 torchrun \
   --standalone --nproc_per_node=8 test_crog.py \
   --config config/OCID-VLG/crog_multiple_r50.yaml \
   --opts DATA.root_path datasets/OCID-VLG \
-         TRAIN.resume exp/OCID-VLG_multiple_npu/CROG_official_multiple_R50_8npu/best_jindex_model.pth \
+         TRAIN.resume exp/OCID-VLG_multiple_npu/CROG_official_multiple_R50_8npu/best_epoch_XXX_J1_XX.XX_J5_XX.XX.pth \
          TEST.test_split test
 ```
 
@@ -149,7 +150,7 @@ Evaluate a DROG checkpoint on one NPU:
 ```bash
 ASCEND_RT_VISIBLE_DEVICES=0 python3 test_crog.py \
   --config config/OCID-VLG/drog.yaml \
-  --opts TRAIN.resume exp/OCID-VLG/drog_ocid_vlg_8npu/best_jindex_model.pth
+  --opts TRAIN.resume exp/OCID-VLG/drog_ocid_vlg_8npu/best_epoch_XXX_J1_XX.XX_J5_XX.XX.pth
 ```
 
 Use `config/OCID-VLG/drogoff.yaml` and the matching checkpoint for DROG-OFF.
@@ -187,8 +188,8 @@ and testing.
 Evaluate both ablations on one NPU with the baseline checkpoint:
 
 ```bash
-ASCEND_RT_VISIBLE_DEVICES=0 python3 test_crog.py --config config/OCID-VLG/drogoff_mask_filter.yaml --opts TRAIN.resume exp/OCID-VLG/drogoff_ocid_vlg_8npu/best_jindex_model.pth
-ASCEND_RT_VISIBLE_DEVICES=0 python3 test_crog.py --config config/OCID-VLG/drogoff_no_offset.yaml --opts TRAIN.resume exp/OCID-VLG/drogoff_ocid_vlg_8npu/best_jindex_model.pth
+ASCEND_RT_VISIBLE_DEVICES=0 python3 test_crog.py --config config/OCID-VLG/drogoff_mask_filter.yaml --opts TRAIN.resume exp/OCID-VLG/drogoff_ocid_vlg_8npu/best_epoch_XXX_J1_XX.XX_J5_XX.XX.pth
+ASCEND_RT_VISIBLE_DEVICES=0 python3 test_crog.py --config config/OCID-VLG/drogoff_no_offset.yaml --opts TRAIN.resume exp/OCID-VLG/drogoff_ocid_vlg_8npu/best_epoch_XXX_J1_XX.XX_J5_XX.XX.pth
 ```
 
 Change only the `TRAIN.resume` path if the baseline checkpoint is stored
