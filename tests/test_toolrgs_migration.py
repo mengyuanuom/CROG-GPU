@@ -179,6 +179,10 @@ class ToolRGSModelMigrationTest(unittest.TestCase):
     def test_maplegrasp_runner_separates_weight_initialization_and_resume(self):
         source = (ROOT / "train_crog.py").read_text(encoding="utf-8")
         self.assertIn("def _load_maplegrasp_stage1", source)
+        self.assertIn("def _resolve_timestamped_checkpoint", source)
+        self.assertIn(
+            'f"{base_dir.name}_*/{requested.name}"', source
+        )
         self.assertIn("model.load_state_dict(state_dict, strict=False)", source)
         self.assertIn('"module.proj.vis_grasp.weight"', source)
         self.assertIn(

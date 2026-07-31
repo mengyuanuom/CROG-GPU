@@ -31,6 +31,7 @@ CONFIG="$1"
 }
 
 export ASCEND_RT_VISIBLE_DEVICES="${ASCEND_RT_VISIBLE_DEVICES:-0,1,2,3,4,5,6,7}"
+export CROG_RUN_TIMESTAMP="${CROG_RUN_TIMESTAMP:-$(date +%Y%m%d_%H%M%S_%3N)}"
 
 NPROC_PER_NODE="${NPROC_PER_NODE:-8}"
 DATA_ROOT="${DATA_ROOT:-${REPO_ROOT}/datasets/OCID-VLG}"
@@ -77,6 +78,7 @@ if grep -Eq '^[[:space:]]*architecture[[:space:]]*:[[:space:]]*etrg([[:space:]]|
 fi
 
 echo "[launch] config: ${CONFIG}"
+echo "[launch] run timestamp: ${CROG_RUN_TIMESTAMP}"
 echo "[launch] model family: ${MODEL_FAMILY}"
 echo "[launch] data root: ${DATA_ROOT}"
 echo "[launch] visible NPUs: ${ASCEND_RT_VISIBLE_DEVICES}"

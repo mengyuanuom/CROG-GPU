@@ -34,6 +34,7 @@ TRAIN:
   manual_seed: 3407
   exp_name: "SSG-R50-OCID-Grasp"
   output_folder: "exp/SSG-R50-OCID-Grasp"
+  save_freq: 1
   base_lr: 0.0003
   lr_decay: 0.95
   momentum: 0.9

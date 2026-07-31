@@ -58,6 +58,19 @@ def _replace_epoch_alias(source, output_dir, prefix, epoch):
     return target
 
 
+def _replace_metric_alias(source, output_dir, prefix, epoch, metric_suffix):
+    """Keep one metric-labelled best checkpoint for a moving best series."""
+    output_dir = Path(output_dir)
+    target = output_dir / (
+        f"{prefix}_epoch_{int(epoch):03d}_{metric_suffix}.pth"
+    )
+    _replace_with_link_or_copy(source, target)
+    for previous in output_dir.glob(f"{prefix}_epoch_*.pth"):
+        if previous != target:
+            previous.unlink()
+    return target
+
+
 def _normalize_checkpoint_keys(state_dict, model):
     """Match plain and DDP checkpoint key prefixes without changing names."""
     target_keys = tuple(model.state_dict().keys())
@@ -76,15 +89,41 @@ def _normalize_checkpoint_keys(state_dict, model):
     return {f"module.{key}": value for key, value in state_dict.items()}
 
 
+def _resolve_timestamped_checkpoint(checkpoint_path):
+    """Resolve a stable base run path to the newest timestamped run."""
+    requested = Path(checkpoint_path)
+    if requested.is_file():
+        return requested
+    base_dir = requested.parent
+    candidates = [
+        candidate
+        for candidate in base_dir.parent.glob(
+            f"{base_dir.name}_*/{requested.name}"
+        )
+        if candidate.is_file()
+    ]
+    if not candidates:
+        return requested
+    return max(candidates, key=lambda candidate: candidate.stat().st_mtime_ns)
+
+
 def _load_maplegrasp_stage1(model, checkpoint_path):
     """Initialize official Stage 2 from a completed Stage-1 checkpoint."""
-    if not os.path.isfile(checkpoint_path):
+    requested_path = checkpoint_path
+    checkpoint_path = _resolve_timestamped_checkpoint(checkpoint_path)
+    if not checkpoint_path.is_file():
         raise ValueError(
             "MapleGrasp Stage-1 checkpoint not found at "
-            f"{checkpoint_path!r}. Train the Stage-1 config first or update "
-            "TRAIN.weight in the Stage-2 YAML."
+            f"{requested_path!r}, including timestamped run directories. "
+            "Train the Stage-1 config first or update TRAIN.weight in the "
+            "Stage-2 YAML."
         )
-    checkpoint = torch.load(checkpoint_path, map_location="cpu")
+    if str(checkpoint_path) != str(requested_path):
+        logger.info(
+            "=> resolved latest timestamped Stage-1 checkpoint: '{}'",
+            checkpoint_path,
+        )
+    checkpoint = torch.load(str(checkpoint_path), map_location="cpu")
     state_dict = checkpoint.get("state_dict", checkpoint)
     state_dict = _normalize_checkpoint_keys(state_dict, model)
     incompatible = model.load_state_dict(state_dict, strict=False)
@@ -109,6 +148,7 @@ def _load_maplegrasp_stage1(model, checkpoint_path):
     )
     del checkpoint
     empty_cache()
+
 
 def get_parser():
     parser = argparse.ArgumentParser(
@@ -155,8 +195,32 @@ def main():
 
 
 def main_worker(local_rank, args):
+    base_exp_name = str(args.exp_name)
+    run_timestamp = os.environ.get("CROG_RUN_TIMESTAMP", "").strip()
+    if not run_timestamp and args.world_size > 1:
+        raise RuntimeError(
+            "Multi-NPU training requires one shared CROG_RUN_TIMESTAMP. "
+            "Launch through tools/train_8npu.sh or export it before torchrun."
+        )
+    if not run_timestamp:
+        run_timestamp = datetime.datetime.now().strftime(
+            "%Y%m%d_%H%M%S_%f"
+        )[:-3]
+    args.base_exp_name = base_exp_name
+    args.run_timestamp = run_timestamp
+    args.exp_name = f"{base_exp_name}_{run_timestamp}"
     args.output_dir = os.path.join(args.output_folder, args.exp_name)
-    os.makedirs(args.output_dir, exist_ok=True)
+    if args.rank == 0:
+        os.makedirs(args.output_dir, exist_ok=False)
+    else:
+        for _ in range(200):
+            if os.path.isdir(args.output_dir):
+                break
+            time.sleep(0.05)
+        else:
+            raise RuntimeError(
+                f"Rank 0 did not create run directory: {args.output_dir}"
+            )
 
     # local rank & global rank
     args.npu = local_rank
@@ -167,6 +231,7 @@ def main_worker(local_rank, args):
                  distributed_rank=args.rank,
                  filename="train.log",
                  mode="a")
+    logger.info("Run output directory: {}", args.output_dir)
 
     # dist init
     os.environ.setdefault("MASTER_ADDR", "127.0.0.1")
@@ -457,6 +522,9 @@ def main_worker(local_rank, args):
                 best_j_index = j_index[0]
             checkpoint = {
                 'epoch': epoch_log,
+                'base_exp_name': args.base_exp_name,
+                'run_timestamp': args.run_timestamp,
+                'output_dir': args.output_dir,
                 'evaluated': do_eval,
                 'cur_iou': iou,
                 'best_iou': best_IoU,
@@ -490,8 +558,12 @@ def main_worker(local_rank, args):
                 _replace_with_link_or_copy(lastname, epoch_name)
 
             if improved_iou:
-                bestname = _replace_epoch_alias(
-                    lastname, args.output_dir, "best_iou", epoch_log
+                bestname = _replace_metric_alias(
+                    lastname,
+                    args.output_dir,
+                    "best_iou",
+                    epoch_log,
+                    f"iou_{100.0 * float(iou):.2f}",
                 )
                 _replace_with_link_or_copy(
                     bestname,
@@ -499,8 +571,14 @@ def main_worker(local_rank, args):
                 )
 
             if improved_j:
-                bestname = _replace_epoch_alias(
-                    lastname, args.output_dir, "best_jindex", epoch_log
+                j1 = float(j_index[0])
+                j5 = float(j_index[1]) if len(j_index) > 1 else 0.0
+                bestname = _replace_metric_alias(
+                    lastname,
+                    args.output_dir,
+                    "best_j1",
+                    epoch_log,
+                    f"j1_{100.0 * j1:.2f}_j5_{100.0 * j5:.2f}",
                 )
                 _replace_with_link_or_copy(
                     bestname,

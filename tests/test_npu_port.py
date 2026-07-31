@@ -47,6 +47,7 @@ class OfficialCROGNPUConfigTest(unittest.TestCase):
                 self.assertRegex(source, r"(?m)^\s*batch_size_val:\s*32\b")
                 self.assertRegex(source, r"(?m)^\s*epochs:\s*24\s*$")
                 self.assertRegex(source, r"(?m)^\s*milestones:\s*\[15\]\s*$")
+                self.assertRegex(source, r"(?m)^\s*save_freq:\s*1\s*$")
 
     def test_training_path_has_no_cuda_or_nccl_calls(self):
         paths = (
@@ -133,7 +134,7 @@ class OfficialCROGNPUConfigTest(unittest.TestCase):
         source = (
             ROOT / "tools" / "train_8npu.sh"
         ).read_text(encoding="utf-8")
-        self.assertNotIn('AMP=', source)
+        self.assertNotRegex(source, r'(?m)^\s*(?:export\s+)?AMP=')
         self.assertNotIn('TRAIN.amp', source)
 
     def test_launcher_and_worker_bind_all_eight_npus(self):
@@ -196,6 +197,27 @@ class OfficialCROGNPUConfigTest(unittest.TestCase):
                 for pattern in removed:
                     self.assertIsNone(pattern.search(source))
 
+    def test_each_training_run_uses_a_timestamped_output_directory(self):
+        trainer = (ROOT / "train_crog.py").read_text(encoding="utf-8")
+        launchers = (
+            ROOT / "tools" / "train_8npu.sh",
+            ROOT / "tools" / "train_toolrgs_model_8npu.sh",
+        )
+        self.assertIn(
+            'os.environ.get("CROG_RUN_TIMESTAMP", "").strip()', trainer
+        )
+        self.assertIn(
+            'args.exp_name = f"{base_exp_name}_{run_timestamp}"', trainer
+        )
+        self.assertIn(
+            '%Y%m%d_%H%M%S_%f', trainer
+        )
+        for launcher in launchers:
+            with self.subTest(launcher=launcher.name):
+                source = launcher.read_text(encoding="utf-8")
+                self.assertIn("CROG_RUN_TIMESTAMP", source)
+                self.assertIn("%Y%m%d_%H%M%S_%3N", source)
+
     def test_validation_interval_and_epoch_checkpoint_names_are_explicit(self):
         source = (ROOT / "train_crog.py").read_text(encoding="utf-8")
         self.assertIn("epoch_log % val_freq == 0", source)
@@ -203,8 +225,12 @@ class OfficialCROGNPUConfigTest(unittest.TestCase):
         self.assertIn("'evaluated': do_eval", source)
         self.assertIn("'last_eval_epoch': last_eval_epoch", source)
         self.assertIn('f"epoch_{epoch_log:03d}_model.pth"', source)
-        self.assertIn('"best_iou", epoch_log', source)
-        self.assertIn('"best_jindex", epoch_log', source)
+        self.assertIn('"best_iou",', source)
+        self.assertIn('f"iou_{100.0 * float(iou):.2f}"', source)
+        self.assertIn('"best_j1",', source)
+        self.assertIn(
+            'f"j1_{100.0 * j1:.2f}_j5_{100.0 * j5:.2f}"', source
+        )
         self.assertIn('os.replace(temporary_lastname, lastname)', source)
 
 
@@ -351,6 +377,7 @@ class OfficialCROGNPUConfigTest(unittest.TestCase):
                 self.assertRegex(source, rf"(?m)^\s*architecture:\s*{architecture}\s*$")
                 self.assertRegex(source, r"(?m)^\s*epochs:\s*24\s*$")
                 self.assertRegex(source, r"(?m)^\s*milestones:\s*\[15\]\s*$")
+                self.assertRegex(source, r"(?m)^\s*save_freq:\s*1\s*$")
                 self.assertRegex(source, rf"(?m)^\s*batch_size:\s*{batch_size}\b")
                 self.assertRegex(
                     source,

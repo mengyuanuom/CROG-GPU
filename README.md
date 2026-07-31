@@ -46,6 +46,20 @@ python -u train_ssg.py --config config/OCID-Grasp/ssg_r50.yaml
 Every YAML under `config/` sets both training and validation batch size to
 `32`. CROG and DROG use Adam at `1e-4`; DROG-OFF uses `4e-4`. Every profile
 runs for 24 epochs with one learning-rate milestone at epoch 15.
+Every YAML also uses `save_freq: 1`. The shared `train_crog.py` runner saves a
+snapshot after every completed epoch.
+Each training launch appends a millisecond timestamp to `TRAIN.exp_name` and
+therefore writes to a new directory, including resume launches. For example:
+
+```text
+exp/ocid_vlg/ggcnnclip_ocid_vlg_8npu_20260731_143025_123/
+epoch_005_model.pth
+best_iou_epoch_005_iou_80.60.pth
+best_j1_epoch_005_j1_90.92_j5_93.69.pth
+```
+
+The stable aliases `best_iou_model.pth` and `best_jindex_model.pth` are kept
+for evaluation, resume, and MapleGrasp Stage-2 compatibility.
 Only the accelerator/runtime path is changed:
 
 - explicit `torch_npu` device calls instead of CUDA calls;
@@ -54,7 +68,7 @@ Only the accelerator/runtime path is changed:
 - per-rank BatchNorm instead of SyncBatchNorm. The latter is deliberately
   disabled because torch_npu SyncBatchNorm can produce device-side
   AIVector/MTE faults during multi-NPU training;
-- CPU checkpoint loading followed by explicit optimizer-state migration.
+- CPU checkpoint loading followed by explicit optimizer-state migration;
 - per-tensor Adam updates by default (`foreach=False`) to avoid Ascend
   `ForeachAddListV2` dynamic-kernel failures.
 

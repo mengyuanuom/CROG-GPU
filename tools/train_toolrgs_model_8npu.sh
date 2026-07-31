@@ -11,6 +11,7 @@ DATA_ROOT="${DATA_ROOT:-${REPO_ROOT}/datasets/OCID-VLG}"
 NPROC_PER_NODE="${NPROC_PER_NODE:-8}"
 EXP_NAME="${EXP_NAME:-${MODEL}_crog_protocol_8npu}"
 export ASCEND_RT_VISIBLE_DEVICES="${ASCEND_RT_VISIBLE_DEVICES:-0,1,2,3,4,5,6,7}"
+export CROG_RUN_TIMESTAMP="${CROG_RUN_TIMESTAMP:-$(date +%Y%m%d_%H%M%S_%3N)}"
 
 case "${MODEL}" in
   etrg)
@@ -49,6 +50,7 @@ python3 tools/download_pretrained.py "${WEIGHTS[@]}"
 
 echo "[launch] model: ${MODEL}"
 echo "[launch] config: ${CONFIG}"
+echo "[launch] run timestamp: ${CROG_RUN_TIMESTAMP}"
 echo "[launch] protocol: CROG legacy"
 echo "[launch] global batch size comes from YAML; processes: ${NPROC_PER_NODE}"
 
