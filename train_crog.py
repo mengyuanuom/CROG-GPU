@@ -33,6 +33,30 @@ warnings.filterwarnings("ignore")
 cv2.setNumThreads(0)
 
 
+class DistributedEvalSampler(data.Sampler):
+    """Shard evaluation indices without padding or duplicating samples."""
+
+    def __init__(self, dataset, num_replicas=None, rank=None):
+        self.dataset = dataset
+        if num_replicas is None:
+            num_replicas = dist.get_world_size()
+        if rank is None:
+            rank = dist.get_rank()
+        self.num_replicas = int(num_replicas)
+        self.rank = int(rank)
+        if not 0 <= self.rank < self.num_replicas:
+            raise ValueError(
+                f"Invalid distributed rank {self.rank}/{self.num_replicas}"
+            )
+
+    def __iter__(self):
+        return iter(range(self.rank, len(self.dataset), self.num_replicas))
+
+    def __len__(self):
+        remaining = max(0, len(self.dataset) - self.rank)
+        return (remaining + self.num_replicas - 1) // self.num_replicas
+
+
 def _replace_with_link_or_copy(source, target):
     """Atomically update a checkpoint alias without duplicating data if possible."""
     source = Path(source)
@@ -176,12 +200,12 @@ def main():
     evaluation_protocol = str(
         getattr(args, "evaluation_protocol", "crog_legacy")
     ).strip().lower()
-    if evaluation_protocol not in {"crog", "crog_legacy", "crog_source"}:
+    if evaluation_protocol not in {"crog", "crog_legacy", "crog_source", "vcot_official"}:
         raise ValueError(
-            "train_crog.py preserves the CROG evaluation protocol; "
-            "set TEST.evaluation_protocol=crog_legacy."
+            "Unsupported TEST.evaluation_protocol; choose crog_legacy "
+            "or vcot_official."
         )
-    args.evaluation_protocol = "crog_legacy"
+    args.evaluation_protocol = evaluation_protocol
     args.local_rank = int(os.environ.get("LOCAL_RANK", 0))
     args.rank = int(os.environ.get("RANK", 0))
     args.world_size = int(os.environ.get("WORLD_SIZE", 1))
@@ -377,7 +401,7 @@ def main_worker(local_rank, args):
                       seed=args.manual_seed)
     train_sampler = data.distributed.DistributedSampler(train_data,
                                                         shuffle=True)
-    val_sampler = data.distributed.DistributedSampler(val_data, shuffle=False)
+    val_sampler = DistributedEvalSampler(val_data)
     train_loader = data.DataLoader(train_data,
                                    batch_size=args.batch_size,
                                    shuffle=False,

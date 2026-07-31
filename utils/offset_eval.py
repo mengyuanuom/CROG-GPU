@@ -172,16 +172,26 @@ def resample_grasp_geometry(
     sine,
     cosine,
     width,
+    short_side=None,
     width_factor=100.0,
+    size_scale=1.0,
 ):
-    """Resample angle and width maps at already-refined grasp centers."""
+    """Resample angle and both rectangle sides at refined grasp centers."""
     sine = np.asarray(sine, dtype=np.float32).squeeze()
     cosine = np.asarray(cosine, dtype=np.float32).squeeze()
     width = np.asarray(width, dtype=np.float32).squeeze()
-    if not (sine.ndim == cosine.ndim == width.ndim == 2):
-        raise ValueError("sine/cosine/width maps must be 2-D")
-    if not (sine.shape == cosine.shape == width.shape):
-        raise ValueError("sine/cosine/width maps must share one shape")
+    short_side = (
+        None
+        if short_side is None
+        else np.asarray(short_side, dtype=np.float32).squeeze()
+    )
+    geometry_maps = [sine, cosine, width]
+    if short_side is not None:
+        geometry_maps.append(short_side)
+    if any(value.ndim != 2 for value in geometry_maps):
+        raise ValueError("grasp geometry maps must be 2-D")
+    if any(value.shape != sine.shape for value in geometry_maps[1:]):
+        raise ValueError("grasp geometry maps must share one shape")
 
     refined = []
     for rectangle in rectangles:
@@ -189,6 +199,11 @@ def resample_grasp_geometry(
         sampled_sine = _sample_bilinear(sine, center_x, center_y)
         sampled_cosine = _sample_bilinear(cosine, center_x, center_y)
         sampled_width = _sample_bilinear(width, center_x, center_y)
+        sampled_short = (
+            height
+            if short_side is None
+            else _sample_bilinear(short_side, center_x, center_y) * width_factor
+        )
         angle_degrees = float(
             0.5 * np.arctan2(sampled_sine, sampled_cosine) / np.pi * 180.0
         )
@@ -197,8 +212,8 @@ def resample_grasp_geometry(
                 [
                     center_x,
                     center_y,
-                    max(1.0, sampled_width * float(width_factor)),
-                    height,
+                    max(1.0, sampled_width * float(width_factor) * float(size_scale)),
+                    max(1.0, sampled_short * float(size_scale)),
                     angle_degrees,
                 ],
                 dtype=np.float32,

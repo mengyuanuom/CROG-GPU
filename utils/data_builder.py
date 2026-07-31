@@ -27,6 +27,7 @@ def build_referring_grasp_dataset(args, split, with_grasp_offset=False):
             with_offset=with_grasp_offset,
             offset_radius=float(getattr(args, "offset_r", 20.0)),
             offset_sigma=getattr(args, "offset_sigma", None),
+            grasp_size_factor=float(getattr(args, "grasp_size_factor", 100.0)),
         )
     if dataset_name in {"ocid-vlg", "ocidvlg"}:
         if split not in {"train", "val", "test"}:

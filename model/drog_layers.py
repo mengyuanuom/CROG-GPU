@@ -506,11 +506,26 @@ class MultiTaskProjector(nn.Module):
         )
 
 class OffsetMultiTaskProjector(nn.Module):
-    """DROG multi-task projector with an additional normalized (dx, dy) head."""
+    """DROG projector with offset and an optional grasp short-side head."""
 
-    def __init__(self, word_dim=1024, in_dim=256, kernel_size=3):
+    def __init__(
+        self,
+        word_dim=1024,
+        in_dim=256,
+        kernel_size=3,
+        with_short_side=False,
+    ):
         super().__init__()
         self.base = MultiTaskProjector(word_dim, in_dim, kernel_size)
+        self.with_short_side = bool(with_short_side)
+        if self.with_short_side:
+            self.short_side = nn.Sequential(
+                nn.Upsample(scale_factor=2, mode="bilinear", align_corners=False),
+                conv_layer(in_dim * 2, in_dim * 2, 3, padding=1),
+                nn.Upsample(scale_factor=2, mode="bilinear", align_corners=False),
+                conv_layer(in_dim * 2, in_dim, 3, padding=1),
+                nn.Conv2d(in_dim, 1, 1),
+            )
         # Offset prediction is geometric rather than class-specific. It consumes
         # the same fused feature map but does not need another dynamic text kernel.
         self.offset = nn.Sequential(
@@ -524,4 +539,6 @@ class OffsetMultiTaskProjector(nn.Module):
 
     def forward(self, x, word):
         outputs = self.base(x, word)
+        if self.with_short_side:
+            return (*outputs, self.short_side(x), self.offset(x))
         return (*outputs, self.offset(x))

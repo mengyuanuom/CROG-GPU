@@ -54,6 +54,10 @@ class VCoTDrogoffSupportTest(unittest.TestCase):
         self.assertEqual(cfg["TEST"]["test_split"], "unseen")
         self.assertEqual(cfg["TEST"]["evaluation_protocol"], "vcot_official")
         self.assertEqual(cfg["TEST"]["grasp_topk"], [1])
+        self.assertTrue(cfg["TRAIN"]["predict_grasp_short_side"])
+        self.assertEqual(cfg["TRAIN"]["short_side_loss_weight"], 1.0)
+        self.assertTrue(cfg["TEST"]["restore_grasp_size_scale"])
+        self.assertEqual(cfg["DATA"]["grasp_size_factor"], 300)
 
     def test_train_test_and_launcher_route_vcot(self):
         trainer = (ROOT / "train_crog.py").read_text(encoding="utf-8")
@@ -62,6 +66,9 @@ class VCoTDrogoffSupportTest(unittest.TestCase):
         engine = (ROOT / "engine" / "crog_engine.py").read_text(encoding="utf-8")
         launcher = (ROOT / "tools" / "train_8npu.sh").read_text(encoding="utf-8")
         self.assertEqual(trainer.count("build_referring_grasp_dataset("), 2)
+        self.assertIn('"vcot_official"', trainer)
+        self.assertIn("DistributedEvalSampler(val_data)", trainer)
+        self.assertNotIn("DistributedSampler(val_data", trainer)
         self.assertIn("build_referring_grasp_dataset(", evaluator)
         self.assertIn("return VCoTDataset(", builder)
         adapter = (ROOT / "utils" / "vcot_dataset.py").read_text(encoding="utf-8")
@@ -72,6 +79,20 @@ class VCoTDrogoffSupportTest(unittest.TestCase):
         self.assertIn("return topk", engine)
         self.assertIn("datasets/graspanything-vcot", launcher)
         self.assertIn('TRAIN_OPTS+=(DATA.split_root "${SPLIT_ROOT}")', launcher)
+
+
+    def test_short_side_decode_and_resample_restore_scale(self):
+        dataset = (ROOT / "utils" / "dataset.py").read_text(encoding="utf-8")
+        model = (ROOT / "model" / "drogoff.py").read_text(encoding="utf-8")
+        engine = (ROOT / "engine" / "crog_engine.py").read_text(encoding="utf-8")
+        grasp_eval = (ROOT / "utils" / "grasp_eval.py").read_text(encoding="utf-8")
+        offset_eval = (ROOT / "utils" / "offset_eval.py").read_text(encoding="utf-8")
+        self.assertIn("'short': short_out", dataset)
+        self.assertIn("predicts_grasp_short_side", model)
+        self.assertIn("short_side_loss", model)
+        self.assertIn("grasp_short_mask=None", grasp_eval)
+        self.assertIn("short_side=None", offset_eval)
+        self.assertIn("restore_grasp_size_scale", engine)
 
 
 if __name__ == "__main__":

@@ -286,9 +286,18 @@ def visualization(img, mask, grasp_masks, grasps, text, save_path=None):
     plt.savefig(save_path)
     
 
-def detect_grasps(grasp_quality_mask, grasp_sin_mask, grasp_cos_mask, grasp_wid_mask, num_grasps=5):
+def detect_grasps(
+    grasp_quality_mask,
+    grasp_sin_mask,
+    grasp_cos_mask,
+    grasp_wid_mask,
+    num_grasps=5,
+    grasp_short_mask=None,
+    size_scale=1.0,
+    size_factor=100.0,
+):
     grasps = []
-    max_width = 100
+    max_width = float(size_factor)
     local_max = peak_local_max(grasp_quality_mask, min_distance=2, threshold_abs=0.4, num_peaks=num_grasps)
     grasp_angle_mask = (np.arctan2(grasp_sin_mask, grasp_cos_mask) / 2.0)
     
@@ -296,8 +305,22 @@ def detect_grasps(grasp_quality_mask, grasp_sin_mask, grasp_cos_mask, grasp_wid_
         grasp_point = tuple(p_array)
         grasp_angle = grasp_angle_mask[grasp_point] / np.pi * 180
         grasp_width = grasp_wid_mask[grasp_point]
+        if grasp_short_mask is None and float(size_scale) == 1.0:
+            grasps.append([float(grasp_point[1]), float(grasp_point[0]), grasp_width*max_width, 20, grasp_angle])
+            continue
 
-        grasps.append([float(grasp_point[1]), float(grasp_point[0]), grasp_width*max_width, 20, grasp_angle])
+        grasp_short = (
+            20.0
+            if grasp_short_mask is None
+            else float(grasp_short_mask[grasp_point]) * max_width
+        )
+        grasps.append([
+            float(grasp_point[1]),
+            float(grasp_point[0]),
+            max(1.0, grasp_width * max_width * float(size_scale)),
+            max(1.0, grasp_short * float(size_scale)),
+            grasp_angle,
+        ])
     
     return grasps, grasp_angle_mask
 

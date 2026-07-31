@@ -9,7 +9,7 @@ import torch.distributed as dist
 import torch.nn.functional as F
 from loguru import logger
 from utils.dataset import tokenize
-from utils.misc import (AverageMeter, ProgressMeter, concat_all_gather, trainMetricGPU, get_seg_image)
+from utils.misc import (AverageMeter, ProgressMeter, trainMetricGPU, get_seg_image)
 from utils.npu import autocast
 from utils.grasp_eval import (detect_grasps, calculate_iou, calculate_max_iou, calculate_jacquard_index, visualization)
 from utils.grasp_ablation import (
@@ -22,6 +22,61 @@ from utils.vcot_eval import calculate_vcot_grasp_success
 
 def _is_vcot_official(args):
     return str(getattr(args, "evaluation_protocol", "crog_legacy")).lower() == "vcot_official"
+
+
+def _model_predicts_short_side(model):
+    unwrapped_model = getattr(model, "module", model)
+    return bool(getattr(unwrapped_model, "predicts_grasp_short_side", False))
+
+
+def _split_grasp_predictions(model, predictions):
+    predicts_short = _model_predicts_short_side(model)
+    short_side = predictions[5] if predicts_short else None
+    offset_index = 6 if predicts_short else 5
+    offset = (
+        predictions[offset_index]
+        if len(predictions) > offset_index
+        else None
+    )
+    return (*predictions[:5], short_side, offset)
+
+
+def _grasp_size_scale(inverse_matrix, args):
+    if not bool(getattr(args, "restore_grasp_size_scale", False)):
+        return 1.0
+    linear = np.asarray(inverse_matrix, dtype=np.float32)[:, :2]
+    scale_x = float(np.linalg.norm(linear[:, 0]))
+    scale_y = float(np.linalg.norm(linear[:, 1]))
+    return max(1e-6, 0.5 * (scale_x + scale_y))
+
+
+def _grasp_size_factor(args):
+    factor = float(getattr(args, "grasp_size_factor", 100.0))
+    if factor <= 0:
+        raise ValueError("grasp_size_factor must be positive")
+    return factor
+
+
+def _reduce_iou_statistics(values, device):
+    local_values = torch.as_tensor(
+        values,
+        dtype=torch.float32,
+        device=device,
+    ).reshape(-1)
+    thresholds = torch.arange(0.5, 1.0, 0.1, device=device)
+    stats = torch.stack(
+        [
+            local_values.sum(),
+            torch.tensor(float(local_values.numel()), device=device),
+            *((local_values > threshold).float().sum() for threshold in thresholds),
+        ]
+    )
+    if dist.is_available() and dist.is_initialized():
+        dist.all_reduce(stats)
+    count = stats[1].clamp_min(1.0)
+    iou = stats[0] / count
+    precision = [stats[index] / count for index in range(2, 7)]
+    return iou, precision
 
 
 def _inverse_interpolation(args):
@@ -56,6 +111,8 @@ def _apply_model_offset(
     sine_map,
     cosine_map,
     width_map,
+    short_side_map,
+    size_scale,
     input_hw,
     args,
 ):
@@ -74,7 +131,9 @@ def _apply_model_offset(
             sine_map,
             cosine_map,
             width_map,
-            width_factor=100.0,
+            short_side=short_side_map,
+            size_scale=size_scale,
+            width_factor=_grasp_size_factor(args),
         )
     return refined
 
@@ -121,6 +180,11 @@ def train_with_grasp(train_loader, model, optimizer, scheduler, scaler, epoch, a
         if bool(getattr(unwrapped_model, "supports_offset", False))
         else None
     )
+    short_loss_metter = (
+        AverageMeter('Loss_short', ':2.4f')
+        if _model_predicts_short_side(model)
+        else None
+    )
     iou_meter = AverageMeter('IoU', ':2.2f')
     pr_meter = AverageMeter('Prec@50', ':2.2f')
     component_loss_meters = [
@@ -131,6 +195,8 @@ def train_with_grasp(train_loader, model, optimizer, scheduler, scaler, epoch, a
     ]
     if off_loss_metter is not None:
         component_loss_meters.append(off_loss_metter)
+    if short_loss_metter is not None:
+        component_loss_meters.append(short_loss_metter)
     progress = ProgressMeter(
         len(train_loader),
         [
@@ -161,6 +227,7 @@ def train_with_grasp(train_loader, model, optimizer, scheduler, scaler, epoch, a
         grasp_wid_mask = data["grasp_masks"]["wid"]
         grasp_off_mask = data["grasp_masks"].get("off")
         grasp_off_weight = data["grasp_masks"].get("off_w")
+        grasp_short_mask = data["grasp_masks"].get("short")
 
 
         data_time.update(time.time() - end)
@@ -175,6 +242,10 @@ def train_with_grasp(train_loader, model, optimizer, scheduler, scaler, epoch, a
         if grasp_off_mask is not None:
             grasp_off_mask = grasp_off_mask.to(args.device, non_blocking=True)
             grasp_off_weight = grasp_off_weight.to(args.device, non_blocking=True)
+        if grasp_short_mask is not None:
+            grasp_short_mask = grasp_short_mask.to(
+                args.device, non_blocking=True
+            ).unsqueeze(1)
 
         # # multi-scale training
         # image = F.interpolate(image, size=(new_size, new_size), mode='bilinear')
@@ -187,6 +258,8 @@ def train_with_grasp(train_loader, model, optimizer, scheduler, scaler, epoch, a
             )
             if grasp_off_mask is not None:
                 model_inputs = (*model_inputs, grasp_off_mask, grasp_off_weight)
+            if _model_predicts_short_side(model):
+                model_inputs = (*model_inputs, grasp_short_mask)
             pred, target, loss, loss_dict = model(*model_inputs)
 
         ins_mask_pred = pred[0]
@@ -217,6 +290,8 @@ def train_with_grasp(train_loader, model, optimizer, scheduler, scaler, epoch, a
         wid_loss_metter.update(loss_dict["m_wid"], image.size(0))
         if off_loss_metter is not None:
             off_loss_metter.update(loss_dict["m_off"], image.size(0))
+        if short_loss_metter is not None:
+            short_loss_metter.update(loss_dict["m_short"], image.size(0))
         iou_meter.update(iou.item(), image.size(0))
         pr_meter.update(pr5.item(), image.size(0))
         lr.update(scheduler.get_last_lr()[-1])
@@ -254,6 +329,7 @@ def validate_with_grasp(val_loader, model, epoch, args):
     num_correct_grasps = 0
     num_total_grasps = 0
     model.eval()
+    evaluation_model = getattr(model, "module", model)
     _log_drogoff_inference_options(model, args)
     time.sleep(2)
 
@@ -271,6 +347,7 @@ def validate_with_grasp(val_loader, model, epoch, args):
         grasp_sin_mask = data["grasp_masks"]["sin"]
         grasp_cos_mask = data["grasp_masks"]["cos"]
         grasp_wid_mask = data["grasp_masks"]["wid"]
+        grasp_short_mask = data["grasp_masks"].get("short")
         inverse_matrix = data["inverse"]
         ori_sizes = data["ori_size"]
         grasp_targets = data["grasps"]
@@ -282,17 +359,27 @@ def validate_with_grasp(val_loader, model, epoch, args):
         grasp_sin_mask = grasp_sin_mask.to(args.device, non_blocking=True).unsqueeze(1)
         grasp_cos_mask = grasp_cos_mask.to(args.device, non_blocking=True).unsqueeze(1)
         grasp_wid_mask = grasp_wid_mask.to(args.device, non_blocking=True).unsqueeze(1)
+        if grasp_short_mask is not None:
+            grasp_short_mask = grasp_short_mask.to(
+                args.device, non_blocking=True
+            ).unsqueeze(1)
 
         # inference & get predictions from model
-        pred, _ = model(image, text, ins_mask, grasp_qua_mask, grasp_sin_mask, grasp_cos_mask, grasp_wid_mask)
+        eval_kwargs = {}
+        if _model_predicts_short_side(model):
+            eval_kwargs["grasp_short_mask"] = grasp_short_mask
+        pred, _ = evaluation_model(image, text, ins_mask, grasp_qua_mask, grasp_sin_mask, grasp_cos_mask, grasp_wid_mask, **eval_kwargs)
 
         # predictions
-        ins_mask_preds = pred[0]
-        grasp_qua_mask_preds = pred[1]
-        grasp_sin_mask_preds = pred[2]
-        grasp_cos_mask_preds = pred[3]
-        grasp_wid_mask_preds = pred[4]
-        grasp_off_mask_preds = pred[5] if len(pred) > 5 else None
+        (
+            ins_mask_preds,
+            grasp_qua_mask_preds,
+            grasp_sin_mask_preds,
+            grasp_cos_mask_preds,
+            grasp_wid_mask_preds,
+            grasp_short_mask_preds,
+            grasp_off_mask_preds,
+        ) = _split_grasp_predictions(model, pred)
 
         # Evaluation uses original input-resolution dataloader targets.
         # Model-returned targets may be resized for training loss computation.
@@ -306,6 +393,8 @@ def validate_with_grasp(val_loader, model, epoch, args):
         ins_mask_preds = torch.sigmoid(ins_mask_preds)
         grasp_qua_mask_preds = torch.sigmoid(grasp_qua_mask_preds)
         grasp_wid_mask_preds = torch.sigmoid(grasp_wid_mask_preds)
+        if grasp_short_mask_preds is not None:
+            grasp_short_mask_preds = torch.sigmoid(grasp_short_mask_preds)
         if (
             grasp_off_mask_preds is not None
             and grasp_off_mask_preds.shape[-2:] != image.shape[-2:]
@@ -342,6 +431,12 @@ def validate_with_grasp(val_loader, model, epoch, args):
                                   size=image.shape[-2:],
                                   mode='bicubic',
                                   align_corners=True).squeeze(1)
+            if grasp_short_mask_preds is not None:
+                grasp_short_mask_preds = F.interpolate(
+                    grasp_short_mask_preds,
+                    size=image.shape[-2:],
+                    mode='bicubic',
+                    align_corners=True).squeeze(1)
 
         # iterate over the whole batch
         for idx in range(ins_mask_preds.shape[0]):
@@ -354,6 +449,11 @@ def validate_with_grasp(val_loader, model, epoch, args):
             grasp_sin_mask_pred = grasp_sin_mask_preds[idx].squeeze().cpu().numpy()
             grasp_cos_mask_pred = grasp_cos_mask_preds[idx].squeeze().cpu().numpy()
             grasp_wid_mask_pred = grasp_wid_mask_preds[idx].squeeze().cpu().numpy()
+            grasp_short_mask_pred = (
+                grasp_short_mask_preds[idx].squeeze().cpu().numpy()
+                if grasp_short_mask_preds is not None
+                else None
+            )
             grasp_off_mask_pred = (
                 grasp_off_mask_preds[idx : idx + 1].cpu().numpy()
                 if grasp_off_mask_preds is not None
@@ -374,6 +474,9 @@ def validate_with_grasp(val_loader, model, epoch, args):
             grasp_sin_mask_pred = inverse(grasp_sin_mask_pred, inv_mat, w, h)
             grasp_cos_mask_pred = inverse(grasp_cos_mask_pred, inv_mat, w, h)
             grasp_wid_mask_pred = inverse(grasp_wid_mask_pred, inv_mat, w, h)
+            if grasp_short_mask_pred is not None:
+                grasp_short_mask_pred = inverse(grasp_short_mask_pred, inv_mat, w, h)
+            size_scale = _grasp_size_scale(inv_mat, args)
 
             ins_mask_target = inverse(ins_mask_target, inv_mat, w, h)
             grasp_qua_mask_target = inverse(grasp_qua_mask_target, inv_mat, w, h)
@@ -400,6 +503,9 @@ def validate_with_grasp(val_loader, model, epoch, args):
                     grasp_cos_mask_pred,
                     grasp_wid_mask_pred,
                     num_g,
+                    grasp_short_mask=grasp_short_mask_pred,
+                    size_scale=size_scale,
+                    size_factor=_grasp_size_factor(args),
                 )
                 grasp_preds = _apply_model_offset(
                     grasp_preds,
@@ -408,6 +514,8 @@ def validate_with_grasp(val_loader, model, epoch, args):
                     grasp_sin_mask_pred,
                     grasp_cos_mask_pred,
                     grasp_wid_mask_pred,
+                    grasp_short_mask_pred,
+                    size_scale,
                     image.shape[-2:],
                     args,
                 )
@@ -430,14 +538,7 @@ def validate_with_grasp(val_loader, model, epoch, args):
     dist.all_reduce(total)
     J_index = (correct / total.clamp_min(1)).cpu().tolist()
 
-    iou_list = np.stack(iou_list)
-    iou_list = torch.from_numpy(iou_list).to(image.device)
-    iou_list = concat_all_gather(iou_list)
-    prec_list = []
-    for thres in torch.arange(0.5, 1.0, 0.1):
-        tmp = (iou_list > thres).float().mean()
-        prec_list.append(tmp)
-    iou = iou_list.mean()
+    iou, prec_list = _reduce_iou_statistics(iou_list, image.device)
     prec = {}
     temp = '  '
     for i, thres in enumerate(range(5, 10)):
@@ -478,6 +579,7 @@ def validate_without_grasp(val_loader, model, epoch, args):
     num_correct_grasps = 0
     num_total_grasps = 0
     model.eval()
+    evaluation_model = getattr(model, "module", model)
     time.sleep(2)
 
     num_grasps = _evaluation_topk(args)
@@ -507,7 +609,7 @@ def validate_without_grasp(val_loader, model, epoch, args):
         grasp_wid_mask = grasp_wid_mask.to(args.device, non_blocking=True).unsqueeze(1)
 
         # inference & get predictions from model
-        pred, _ = model(image, text, ins_mask, grasp_qua_mask, grasp_sin_mask, grasp_cos_mask, grasp_wid_mask)
+        pred, _ = evaluation_model(image, text, ins_mask, grasp_qua_mask, grasp_sin_mask, grasp_cos_mask, grasp_wid_mask)
         ins_mask_targets = ins_mask
 
         # Interpolate the predicted ins mask to the same size of input image
@@ -542,14 +644,7 @@ def validate_without_grasp(val_loader, model, epoch, args):
 
     J_index = [0, 0]
 
-    iou_list = np.stack(iou_list)
-    iou_list = torch.from_numpy(iou_list).to(image.device)
-    iou_list = concat_all_gather(iou_list)
-    prec_list = []
-    for thres in torch.arange(0.5, 1.0, 0.1):
-        tmp = (iou_list > thres).float().mean()
-        prec_list.append(tmp)
-    iou = iou_list.mean()
+    iou, prec_list = _reduce_iou_statistics(iou_list, image.device)
     prec = {}
     temp = '  '
     for i, thres in enumerate(range(5, 10)):
@@ -601,6 +696,7 @@ def inference_with_grasp(test_loader, model, args):
         grasp_sin_mask = data["grasp_masks"]["sin"]
         grasp_cos_mask = data["grasp_masks"]["cos"]
         grasp_wid_mask = data["grasp_masks"]["wid"]
+        grasp_short_mask = data["grasp_masks"].get("short")
         inverse_matrix = data["inverse"]
         ori_sizes = data["ori_size"]
         grasp_targets = data["grasps"]
@@ -614,17 +710,28 @@ def inference_with_grasp(test_loader, model, args):
         grasp_sin_mask = grasp_sin_mask.to(args.device, non_blocking=True).unsqueeze(1)
         grasp_cos_mask = grasp_cos_mask.to(args.device, non_blocking=True).unsqueeze(1)
         grasp_wid_mask = grasp_wid_mask.to(args.device, non_blocking=True).unsqueeze(1)
+        if grasp_short_mask is not None:
+            grasp_short_mask = grasp_short_mask.to(
+                args.device, non_blocking=True
+            ).unsqueeze(1)
 
         # inference & get predictions from model
-        pred, _ = model(image, text, ins_mask, grasp_qua_mask, grasp_sin_mask, grasp_cos_mask, grasp_wid_mask)
+        eval_kwargs = {}
+        if _model_predicts_short_side(model):
+            eval_kwargs["grasp_short_mask"] = grasp_short_mask
+        pred, _ = model(image, text, ins_mask, grasp_qua_mask, grasp_sin_mask, grasp_cos_mask, grasp_wid_mask, **eval_kwargs)
 
+        # Legacy DROG-OFF uses pred[5] for offset; VCoT uses it for short side.
         # predictions
-        ins_mask_preds = pred[0]
-        grasp_qua_mask_preds = pred[1]
-        grasp_sin_mask_preds = pred[2]
-        grasp_cos_mask_preds = pred[3]
-        grasp_wid_mask_preds = pred[4]
-        grasp_off_mask_preds = pred[5] if len(pred) > 5 else None
+        (
+            ins_mask_preds,
+            grasp_qua_mask_preds,
+            grasp_sin_mask_preds,
+            grasp_cos_mask_preds,
+            grasp_wid_mask_preds,
+            grasp_short_mask_preds,
+            grasp_off_mask_preds,
+        ) = _split_grasp_predictions(model, pred)
 
         # Evaluation uses original input-resolution dataloader targets.
         # Model-returned targets may be resized for training loss computation.
@@ -638,6 +745,8 @@ def inference_with_grasp(test_loader, model, args):
         ins_mask_preds = torch.sigmoid(ins_mask_preds)
         grasp_qua_mask_preds = torch.sigmoid(grasp_qua_mask_preds)
         grasp_wid_mask_preds = torch.sigmoid(grasp_wid_mask_preds)
+        if grasp_short_mask_preds is not None:
+            grasp_short_mask_preds = torch.sigmoid(grasp_short_mask_preds)
         if (
             grasp_off_mask_preds is not None
             and grasp_off_mask_preds.shape[-2:] != image.shape[-2:]
@@ -674,6 +783,12 @@ def inference_with_grasp(test_loader, model, args):
                                   size=image.shape[-2:],
                                   mode='bicubic',
                                   align_corners=True).squeeze(1)
+            if grasp_short_mask_preds is not None:
+                grasp_short_mask_preds = F.interpolate(
+                    grasp_short_mask_preds,
+                    size=image.shape[-2:],
+                    mode='bicubic',
+                    align_corners=True).squeeze(1)
 
 
         # iterate over the whole batch
@@ -689,6 +804,11 @@ def inference_with_grasp(test_loader, model, args):
             grasp_sin_mask_pred = grasp_sin_mask_preds[idx].squeeze().cpu().numpy()
             grasp_cos_mask_pred = grasp_cos_mask_preds[idx].squeeze().cpu().numpy()
             grasp_wid_mask_pred = grasp_wid_mask_preds[idx].squeeze().cpu().numpy()
+            grasp_short_mask_pred = (
+                grasp_short_mask_preds[idx].squeeze().cpu().numpy()
+                if grasp_short_mask_preds is not None
+                else None
+            )
             grasp_off_mask_pred = (
                 grasp_off_mask_preds[idx : idx + 1].cpu().numpy()
                 if grasp_off_mask_preds is not None
@@ -709,6 +829,9 @@ def inference_with_grasp(test_loader, model, args):
             grasp_sin_mask_pred = inverse(grasp_sin_mask_pred, inv_mat, w, h)
             grasp_cos_mask_pred = inverse(grasp_cos_mask_pred, inv_mat, w, h)
             grasp_wid_mask_pred = inverse(grasp_wid_mask_pred, inv_mat, w, h)
+            if grasp_short_mask_pred is not None:
+                grasp_short_mask_pred = inverse(grasp_short_mask_pred, inv_mat, w, h)
+            size_scale = _grasp_size_scale(inv_mat, args)
 
             ins_mask_target = inverse(ins_mask_target, inv_mat, w, h)
             grasp_qua_mask_target = inverse(grasp_qua_mask_target, inv_mat, w, h)
@@ -738,6 +861,9 @@ def inference_with_grasp(test_loader, model, args):
                     grasp_cos_mask_pred,
                     grasp_wid_mask_pred,
                     num_g,
+                    grasp_short_mask=grasp_short_mask_pred,
+                    size_scale=size_scale,
+                    size_factor=_grasp_size_factor(args),
                 )
                 grasp_preds = _apply_model_offset(
                     grasp_preds,
@@ -746,6 +872,8 @@ def inference_with_grasp(test_loader, model, args):
                     grasp_sin_mask_pred,
                     grasp_cos_mask_pred,
                     grasp_wid_mask_pred,
+                    grasp_short_mask_pred,
+                    size_scale,
                     image.shape[-2:],
                     args,
                 )

@@ -699,6 +699,7 @@ class GraspTransforms:
         pos_out = np.zeros((self.height, self.width))
         ang_out = np.zeros((self.height, self.width))
         wid_out = np.zeros((self.height, self.width))
+        short_out = np.zeros((self.height, self.width))
         for rect in grasp_rectangles:
             center_x, center_y, w_rect, h_rect, theta = rect[:5]
 
@@ -724,17 +725,24 @@ class GraspTransforms:
                 ang_out[cc, rr] = int(theta)
             # Adopt width normalize accoding to class
             wid_out[cc, rr] = np.clip(w_rect, 0.0, self.width_factor) / self.width_factor
+            short_out[cc, rr] = np.clip(
+                h_rect, 0.0, self.width_factor
+            ) / self.width_factor
 
         qua_out = (gaussian(pos_out, 3, preserve_range=True) * 255).astype(np.uint8)
         pos_out = (pos_out * 255).astype(np.uint8)
         ang_out = ang_out.astype(np.uint8)
         wid_out = (gaussian(wid_out, 3, preserve_range=True) * 255).astype(np.uint8)
+        short_out = (
+            gaussian(short_out, 3, preserve_range=True) * 255
+        ).astype(np.uint8)
 
 
         return {'pos': pos_out,
                 'qua': qua_out,
                 'ang': ang_out,
-                'wid': wid_out}
+                'wid': wid_out,
+                'short': short_out}
 
 
 
