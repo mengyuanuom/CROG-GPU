@@ -314,6 +314,9 @@ class OfficialCROGNPUConfigTest(unittest.TestCase):
 
     def test_drogoff_inference_ablations_are_checkpoint_compatible(self):
         engine = (ROOT / "engine" / "crog_engine.py").read_text(encoding="utf-8")
+        evaluator = (
+            ROOT / "test_crog.py"
+        ).read_text(encoding="utf-8")
         inference = engine.split("def inference_with_grasp", 1)[1]
         self.assertIn(
             'getattr(args, "use_offset_at_inference", True)', engine
@@ -331,6 +334,16 @@ class OfficialCROGNPUConfigTest(unittest.TestCase):
         self.assertEqual(
             engine.count("_decode_grasp_size_map(grasp_wid_mask_preds, args)"), 2
         )
+        self.assertIn(
+            'getattr(args, "test_batch_size", 1)', evaluator
+        )
+        self.assertIn(
+            'getattr(args, "test_workers", 1)', evaluator
+        )
+        self.assertIn("batch_size=test_batch_size", evaluator)
+        self.assertIn("num_workers=test_workers", evaluator)
+        self.assertNotIn("batch_size=1", evaluator)
+        self.assertNotIn("num_workers=1", evaluator)
         self.assertLess(
             inference.index("detect_grasps("),
             inference.index("_apply_model_offset("),
@@ -370,6 +383,14 @@ class OfficialCROGNPUConfigTest(unittest.TestCase):
                 self.assertRegex(
                     source,
                     r"(?m)^\s*grasp_size_activation:\s*sigmoid\s*$",
+                )
+                self.assertRegex(
+                    source,
+                    r"(?m)^\s*test_batch_size:\s*32\b",
+                )
+                self.assertRegex(
+                    source,
+                    r"(?m)^\s*test_workers:\s*2\b",
                 )
                 self.assertRegex(source, r"(?m)^\s*batch_size:\s*32\b")
                 self.assertRegex(source, r"(?m)^\s*batch_size_val:\s*32\b")

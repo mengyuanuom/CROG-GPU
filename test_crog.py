@@ -101,11 +101,22 @@ def main():
         test_data = torch.utils.data.Subset(full_test_data, indices)
     else:
         test_data = full_test_data
+    test_batch_size = int(getattr(args, "test_batch_size", 1))
+    test_workers = int(getattr(args, "test_workers", 1))
+    if test_batch_size <= 0:
+        raise ValueError("TEST.test_batch_size must be positive")
+    if test_workers < 0:
+        raise ValueError("TEST.test_workers must be non-negative")
+    logger.info(
+        "Inference loader: per-device batch_size={}, workers={}",
+        test_batch_size,
+        test_workers,
+    )
     test_loader = torch.utils.data.DataLoader(
         test_data,
-        batch_size=1,
+        batch_size=test_batch_size,
         shuffle=False,
-        num_workers=1,
+        num_workers=test_workers,
         pin_memory=bool(getattr(args, "pin_memory", False)),
         collate_fn=full_test_data.collate_fn,
     )

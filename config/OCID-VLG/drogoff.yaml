@@ -82,6 +82,8 @@ Distributed:
 TEST:
   test_split: test
   evaluation_protocol: crog_legacy
+  test_batch_size: 32  # per device; reduce with --opts if memory is limited
+  test_workers: 2
   grasp_size_activation: sigmoid
   use_offset_at_inference: True
   filter_grasps_by_segmentation: False
