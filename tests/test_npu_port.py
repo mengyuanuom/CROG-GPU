@@ -31,6 +31,8 @@ class OfficialCROGNPUConfigTest(unittest.TestCase):
             r"^\s*resume:\s*$",
             r"^\s*save_freq:\s*0\s*$",
             r"^\s*val_freq:\s*1\b",
+            r"^\s*val_start_epoch:\s*11\s*$",
+            r"^\s*save_epochs:\s*\[5,\s*10\]\s*$",
             r"^\s*dist_backend:\s*['\"]hccl['\"]\s*$",
             r"^\s*dist_url:\s*env://\s*$",
         )
@@ -49,6 +51,8 @@ class OfficialCROGNPUConfigTest(unittest.TestCase):
                 self.assertRegex(source, r"(?m)^\s*milestones:\s*\[15\]\s*$")
                 self.assertRegex(source, r"(?m)^\s*save_freq:\s*0\s*$")
                 self.assertRegex(source, r"(?m)^\s*val_freq:\s*1\s*$")
+                self.assertRegex(source, r"(?m)^\s*val_start_epoch:\s*11\s*$")
+                self.assertRegex(source, r"(?m)^\s*save_epochs:\s*\[5,\s*10\]\s*$")
 
     def test_training_path_has_no_cuda_or_nccl_calls(self):
         paths = (
@@ -221,13 +225,16 @@ class OfficialCROGNPUConfigTest(unittest.TestCase):
 
     def test_validation_interval_and_epoch_checkpoint_names_are_explicit(self):
         source = (ROOT / "train_crog.py").read_text(encoding="utf-8")
-        self.assertIn("epoch_log % val_freq == 0", source)
-        self.assertIn("epoch_log == args.epochs", source)
+        self.assertIn("epoch_log >= val_start_epoch", source)
+        self.assertIn(
+            "(epoch_log - val_start_epoch) % val_freq == 0", source
+        )
+        self.assertIn("save_recovery = epoch_log in save_epochs", source)
         self.assertIn("'evaluated': do_eval", source)
         self.assertIn("'last_eval_epoch': last_eval_epoch", source)
-        self.assertNotIn('f"epoch_{epoch_log:03d}_model.pth"', source)
+        self.assertIn('f"epoch_{epoch_log:03d}_model.pth"', source)
         self.assertNotIn("_replace_epoch_alias", source)
-        self.assertIn('"last_model.pth"', source)
+        self.assertNotIn('"last_model.pth"', source)
         self.assertIn('"best",', source)
         self.assertIn('f"IoU_{100.0 * float(iou):.2f}"', source)
         self.assertIn(
@@ -236,7 +243,7 @@ class OfficialCROGNPUConfigTest(unittest.TestCase):
         self.assertIn(
             'output_dir.glob(f"{prefix}_epoch_*.pth")', source
         )
-        self.assertIn('os.replace(temporary_lastname, lastname)', source)
+        self.assertIn("os.remove(temporary_checkpoint)", source)
 
 
     def test_drog_family_uses_crog_scorer_after_model_postprocess(self):
@@ -384,6 +391,8 @@ class OfficialCROGNPUConfigTest(unittest.TestCase):
                 self.assertRegex(source, r"(?m)^\s*milestones:\s*\[15\]\s*$")
                 self.assertRegex(source, r"(?m)^\s*save_freq:\s*0\s*$")
                 self.assertRegex(source, r"(?m)^\s*val_freq:\s*1\s*$")
+                self.assertRegex(source, r"(?m)^\s*val_start_epoch:\s*11\s*$")
+                self.assertRegex(source, r"(?m)^\s*save_epochs:\s*\[5,\s*10\]\s*$")
                 self.assertRegex(source, rf"(?m)^\s*batch_size:\s*{batch_size}\b")
                 self.assertRegex(
                     source,

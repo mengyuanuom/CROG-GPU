@@ -42,6 +42,8 @@ TRAIN:
   output_folder: exp/OCID-VLG_multiple
   save_freq: 0
   val_freq: 1
+  val_start_epoch: 11
+  save_epochs: [5, 10]
   weight:  # path to initial weight (default: none)
   resume:  # exp/OCID-VLG_multiple/CROG_multiple_R50/best_epoch_XXX_J1_XX.XX_J5_XX.XX.pth
   evaluate: True  # evaluate on validation set, extra gpu memory needed and small batch_size_val is recommend

@@ -450,15 +450,35 @@ def main_worker(local_rank, args):
                 .format(args.resume))
 
     val_freq = int(getattr(args, "val_freq", 1))
+    val_start_epoch = int(getattr(args, "val_start_epoch", 1))
+    save_epochs = tuple(
+        sorted({int(epoch) for epoch in getattr(args, "save_epochs", [])})
+    )
     evaluate_enabled = bool(getattr(args, "evaluate", True))
     if evaluate_enabled and val_freq <= 0:
         raise ValueError(f"val_freq must be positive, got {val_freq}")
+    if val_start_epoch <= 0:
+        raise ValueError(
+            f"val_start_epoch must be positive, got {val_start_epoch}"
+        )
+    invalid_save_epochs = [
+        epoch for epoch in save_epochs
+        if epoch <= 0 or epoch > args.epochs
+    ]
+    if invalid_save_epochs:
+        raise ValueError(
+            "save_epochs must be within the configured training range "
+            f"1..{args.epochs}, got {invalid_save_epochs}"
+        )
     if args.rank == 0:
         logger.info(
-            "Validation schedule: enabled={}, every {} epoch(s), "
-            "always on final epoch; checkpoint policy=rolling last + best only",
+            "Validation schedule: enabled={}, starts at epoch {}, every {} "
+            "epoch(s); recovery checkpoints={}; checkpoint policy=scheduled "
+            "recovery + one metric-labelled best",
             evaluate_enabled,
+            val_start_epoch,
             val_freq,
+            list(save_epochs),
         )
 
     # start training
@@ -471,16 +491,16 @@ def main_worker(local_rank, args):
 
         # train
         train_with_grasp(train_loader, model, optimizer, scheduler, scaler, epoch_log,  args)
-        do_eval = evaluate_enabled and (
-            epoch_log % val_freq == 0 or epoch_log == args.epochs
+        do_eval = evaluate_enabled and epoch_log >= val_start_epoch and (
+            (epoch_log - val_start_epoch) % val_freq == 0
         )
         iou, prec_dict, j_index = None, {}, []
+        segmentation_only = bool(
+            getattr(model.module, "segmentation_only", False)
+        )
         if do_eval:
             # Official MapleGrasp Stage 1 validates segmentation only; Stage 2
             # validates segmentation plus grasp maps through the CROG scorer.
-            segmentation_only = bool(
-                getattr(model.module, "segmentation_only", False)
-            )
             if segmentation_only:
                 iou, prec_dict, j_index = validate_without_grasp(
                     val_loader, model, epoch_log, args
@@ -499,8 +519,9 @@ def main_worker(local_rank, args):
             last_j_index = j_index
         elif args.rank == 0:
             logger.info(
-                "Skipping validation at epoch {} (val_freq={})",
+                "Skipping validation at epoch {} (starts at {}, val_freq={})",
                 epoch_log,
+                val_start_epoch,
                 val_freq,
             )
 
@@ -508,9 +529,8 @@ def main_worker(local_rank, args):
         # This is the same uninterrupted training schedule as upstream.
         scheduler.step(epoch_log)
 
-        # save model
+        # Save only explicit recovery epochs and newly improved best models.
         if dist.get_rank() == 0:
-            lastname = os.path.join(args.output_dir, "last_model.pth")
             improved_iou = bool(do_eval and iou > best_IoU)
             improved_j = bool(
                 do_eval and j_index and j_index[0] > best_j_index
@@ -519,51 +539,75 @@ def main_worker(local_rank, args):
                 best_IoU = iou
             if improved_j:
                 best_j_index = j_index[0]
-            checkpoint = {
-                'epoch': epoch_log,
-                'base_exp_name': args.base_exp_name,
-                'run_timestamp': args.run_timestamp,
-                'output_dir': args.output_dir,
-                'evaluated': do_eval,
-                'cur_iou': iou,
-                'best_iou': best_IoU,
-                'best_j_index': best_j_index,
-                'prec': prec_dict,
-                'j_index': j_index,
-                'last_eval_epoch': last_eval_epoch,
-                'last_iou': last_iou,
-                'last_prec': last_prec_dict,
-                'last_j_index': last_j_index,
-                'state_dict': model.state_dict(),
-                'optimizer': optimizer.state_dict(),
-                'scheduler': scheduler.state_dict()
-            }
-            temporary_lastname = os.path.join(
-                args.output_dir, ".last_model.pth.tmp"
+
+            save_recovery = epoch_log in save_epochs
+            save_best_iou = bool(
+                do_eval and segmentation_only and improved_iou
             )
-            torch.save(checkpoint, temporary_lastname)
-            os.replace(temporary_lastname, lastname)
-
-            if do_eval and segmentation_only and improved_iou:
-                _replace_metric_alias(
-                    lastname,
-                    args.output_dir,
-                    "best",
-                    epoch_log,
-                    f"IoU_{100.0 * float(iou):.2f}",
+            save_best_j = bool(
+                do_eval and not segmentation_only and improved_j
+            )
+            if save_recovery or save_best_iou or save_best_j:
+                checkpoint = {
+                    'epoch': epoch_log,
+                    'base_exp_name': args.base_exp_name,
+                    'run_timestamp': args.run_timestamp,
+                    'output_dir': args.output_dir,
+                    'evaluated': do_eval,
+                    'cur_iou': iou,
+                    'best_iou': best_IoU,
+                    'best_j_index': best_j_index,
+                    'prec': prec_dict,
+                    'j_index': j_index,
+                    'last_eval_epoch': last_eval_epoch,
+                    'last_iou': last_iou,
+                    'last_prec': last_prec_dict,
+                    'last_j_index': last_j_index,
+                    'state_dict': model.state_dict(),
+                    'optimizer': optimizer.state_dict(),
+                    'scheduler': scheduler.state_dict()
+                }
+                temporary_checkpoint = os.path.join(
+                    args.output_dir, ".checkpoint.pth.tmp"
                 )
+                torch.save(checkpoint, temporary_checkpoint)
 
-            if do_eval and not segmentation_only and improved_j:
-                j1 = float(j_index[0])
-                j5 = float(j_index[1]) if len(j_index) > 1 else 0.0
-                _replace_metric_alias(
-                    lastname,
-                    args.output_dir,
-                    "best",
-                    epoch_log,
-                    f"J1_{100.0 * j1:.2f}_J5_{100.0 * j5:.2f}",
-                )
+                if save_recovery:
+                    recovery_name = os.path.join(
+                        args.output_dir,
+                        f"epoch_{epoch_log:03d}_model.pth",
+                    )
+                    _replace_with_link_or_copy(
+                        temporary_checkpoint, recovery_name
+                    )
+                    logger.info(
+                        "Saved scheduled recovery checkpoint: {}",
+                        recovery_name,
+                    )
 
+                if save_best_iou:
+                    best_name = _replace_metric_alias(
+                        temporary_checkpoint,
+                        args.output_dir,
+                        "best",
+                        epoch_log,
+                        f"IoU_{100.0 * float(iou):.2f}",
+                    )
+                    logger.info("Replaced best checkpoint: {}", best_name)
+
+                if save_best_j:
+                    j1 = float(j_index[0])
+                    j5 = float(j_index[1]) if len(j_index) > 1 else 0.0
+                    best_name = _replace_metric_alias(
+                        temporary_checkpoint,
+                        args.output_dir,
+                        "best",
+                        epoch_log,
+                        f"J1_{100.0 * j1:.2f}_J5_{100.0 * j5:.2f}",
+                    )
+                    logger.info("Replaced best checkpoint: {}", best_name)
+
+                os.remove(temporary_checkpoint)
         empty_cache()
 
     time.sleep(2)

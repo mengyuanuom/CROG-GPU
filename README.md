@@ -46,19 +46,23 @@ python -u train_ssg.py --config config/OCID-Grasp/ssg_r50.yaml
 Every YAML under `config/` sets both training and validation batch size to
 `32`. CROG and DROG use Adam at `1e-4`; DROG-OFF uses `4e-4`. Every profile
 runs for 24 epochs with one learning-rate milestone at epoch 15.
-Every YAML uses `save_freq: 0` and `val_freq: 1`: validation runs after every
-epoch, but epoch-by-epoch model snapshots are disabled. The runner keeps one
-rolling `last_model.pth` for recovery. Grasp models keep exactly one best
-checkpoint selected by J1; a new J1 best deletes and replaces the previous one.
-Each training launch appends a millisecond timestamp to `TRAIN.exp_name` and
-therefore writes to a new directory, including resume launches. For example:
+All `train_crog.py` YAML profiles use `val_start_epoch: 11` and `val_freq: 1`:
+epochs 1-10 train without validation, then epochs 11-24 validate every epoch.
+Only scheduled recovery checkpoints are written at epochs 5 and 10; there is
+no per-epoch `last_model.pth` write. Grasp models keep exactly one best
+checkpoint selected by J1 after validation begins; a new J1 best deletes and
+replaces the previous one. Each training launch appends a millisecond timestamp
+to `TRAIN.exp_name` and therefore writes to a new directory, including resume
+launches. For example:
 
 ```text
 exp/ocid_vlg/ggcnnclip_ocid_vlg_8npu_20260731_143025_123/
-best_epoch_005_J1_90.92_J5_93.69.pth
+epoch_005_model.pth
+epoch_010_model.pth
+best_epoch_011_J1_90.92_J5_93.69.pth
 ```
 
-Pure segmentation stages use `best_epoch_005_IoU_80.60.pth`. MapleGrasp
+Pure segmentation stages use `best_epoch_011_IoU_80.60.pth`. MapleGrasp
 Stage 2 automatically resolves its legacy Stage-1 path to the newest
 timestamped epoch+IoU checkpoint.
 Only the accelerator/runtime path is changed:
@@ -281,8 +285,8 @@ bash tools/train_8npu.sh config/OCID-VLG/maplegrasp_stage2.yaml
 
 `TRAIN.weight` is only for the Stage-1-to-Stage-2 transition. To continue an
 interrupted Stage 1 or Stage 2 run, leave `weight` empty and set `TRAIN.resume`
-to that same stage's `last_model.pth`. `config/OCID-VLG/maplegrasp.yaml` is a
-Stage-1-compatible alias.
+to that stage's `epoch_010_model.pth` (or its current `best_epoch_*.pth`).
+`config/OCID-VLG/maplegrasp.yaml` is a Stage-1-compatible alias.
 
 The upstream README names a MapleGrasp YAML that is not present in its released
 git tree. Consequently, this port keeps the CROG schedule used by the model
