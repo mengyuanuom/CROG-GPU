@@ -37,8 +37,8 @@ class OfficialCROGNPUConfigTest(unittest.TestCase):
         path = ROOT / "config" / "OCID-VLG" / "crog_multiple_r50.yaml"
         source = path.read_text(encoding="utf-8")
         expected_lines = (
-            r"^\s*epochs:\s*24\s*$",
-            r"^\s*milestones:\s*\[20\]\s*$",
+            r"^\s*epochs:\s*36\s*$",
+            r"^\s*milestones:\s*\[30\]\s*$",
             r"^\s*batch_size:\s*32\b",
             r"^\s*batch_size_val:\s*32\b",
             r"^\s*base_lr:\s*0\.0001\b",
@@ -59,15 +59,34 @@ class OfficialCROGNPUConfigTest(unittest.TestCase):
             with self.subTest(pattern=pattern):
                 self.assertRegex(source, re.compile(pattern, re.MULTILINE))
 
-    def test_all_yaml_training_profiles_are_uniform(self):
+    def test_yaml_training_profiles_match_selected_schedule(self):
         config_dir = ROOT / "config"
+        long_schedule = {
+            "OCID-VLG/drogoff.yaml",
+            "OCID-VLG/drog.yaml",
+            "OCID-VLG/crog_multiple_r50.yaml",
+            "OCID-VLG/lgd.yaml",
+            "OCID-VLG/grconvnetclip.yaml",
+            "OCID-VLG/ggcnnclip.yaml",
+            "OCID-VLG/etrg.yaml",
+            "vcot/drogoff.yaml",
+        }
         for path in sorted(config_dir.rglob("*.yaml")):
             source = path.read_text(encoding="utf-8")
-            with self.subTest(config=path.relative_to(config_dir)):
+            relative_config = path.relative_to(config_dir).as_posix()
+            is_long_run = relative_config in long_schedule
+            expected_epochs = 36 if is_long_run else 24
+            expected_milestone = 30 if is_long_run else 20
+            with self.subTest(config=relative_config):
                 self.assertRegex(source, r"(?m)^\s*batch_size:\s*32\b")
                 self.assertRegex(source, r"(?m)^\s*batch_size_val:\s*32\b")
-                self.assertRegex(source, r"(?m)^\s*epochs:\s*24\s*$")
-                self.assertRegex(source, r"(?m)^\s*milestones:\s*\[20\]\s*$")
+                self.assertRegex(
+                    source, rf"(?m)^\s*epochs:\s*{expected_epochs}\s*$"
+                )
+                self.assertRegex(
+                    source,
+                    rf"(?m)^\s*milestones:\s*\[{expected_milestone}\]\s*$",
+                )
                 self.assertRegex(source, r"(?m)^\s*base_lr:\s*0\.0001\b")
                 self.assertRegex(source, r"(?m)^\s*save_freq:\s*0\s*$")
                 self.assertRegex(source, r"(?m)^\s*val_freq:\s*1\s*$")
@@ -434,8 +453,8 @@ class OfficialCROGNPUConfigTest(unittest.TestCase):
 
     def test_drog_configs_match_the_requested_global_schedule(self):
         expected_optimization = {
-            "drog.yaml": ("drog", 32, 32, "0.0001", 20),
-            "drogoff.yaml": ("drogoff", 32, 32, "0.0001", 20),
+            "drog.yaml": ("drog", 32, 32, "0.0001", 30),
+            "drogoff.yaml": ("drogoff", 32, 32, "0.0001", 30),
         }
         for name, (
             architecture,
@@ -447,7 +466,7 @@ class OfficialCROGNPUConfigTest(unittest.TestCase):
             source = (ROOT / "config" / "OCID-VLG" / name).read_text(encoding="utf-8")
             with self.subTest(config=name):
                 self.assertRegex(source, rf"(?m)^\s*architecture:\s*{architecture}\s*$")
-                self.assertRegex(source, r"(?m)^\s*epochs:\s*24\s*$")
+                self.assertRegex(source, r"(?m)^\s*epochs:\s*36\s*$")
                 self.assertRegex(
                     source, rf"(?m)^\s*milestones:\s*\[{milestone}\]\s*$"
                 )
