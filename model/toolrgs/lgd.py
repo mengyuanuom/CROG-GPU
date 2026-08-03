@@ -189,6 +189,8 @@ class CosineDiffusion(nn.Module):
 class LGD(nn.Module):
     """ToolRGS port of Language-driven Grasp Detection."""
 
+    grasp_size_loss_activation = "clamp"
+
     def __init__(self, cfg):
         super().__init__()
         clip_model = torch.jit.load(cfg.clip_pretrain, map_location="cpu").eval()

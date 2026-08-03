@@ -9,6 +9,8 @@ from .layers import FPN, Projector, TransformerDecoder, MultiTaskProjector
 
 
 class CROG(nn.Module):
+    grasp_size_loss_activation = "clamp"
+
     def __init__(self, cfg):
         super().__init__()
         

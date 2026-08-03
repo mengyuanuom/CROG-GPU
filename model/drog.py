@@ -10,6 +10,8 @@ from .drog_projector import build_projector
 from utils.pretrained import ensure_pretrained
 
 class DROG(nn.Module):
+    grasp_size_loss_activation = "clamp"
+
     def __init__(self, cfg):
         super().__init__()
         # Text Encoder

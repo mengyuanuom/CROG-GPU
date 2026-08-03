@@ -12,6 +12,7 @@ Examples:
   bash tools/train_8npu.sh config/OCID-VLG/drog.yaml
   bash tools/train_8npu.sh config/OCID-VLG/drogoff.yaml
   bash tools/train_8npu.sh config/OCID-VLG/etrg.yaml
+  bash tools/train_8npu.sh config/grasp_tools/drogoff.yaml
   bash tools/train_8npu.sh config/vcot/drogoff.yaml
 EOF
 }
@@ -39,6 +40,10 @@ if grep -Eq '^[[:space:]]*dataset[[:space:]]*:[[:space:]]*vcot([[:space:]]|$)' "
   DATASET_NAME="VCoT/Grasp-Anything"
   DATA_ROOT="${DATA_ROOT:-${REPO_ROOT}/datasets/graspanything-vcot}"
   SPLIT_ROOT="${SPLIT_ROOT:-${DATA_ROOT}/split/vcot}"
+elif grep -Eqi '^[[:space:]]*dataset[[:space:]]*:[[:space:]]*grasp-?tools?([[:space:]]|$)' "${CONFIG}"; then
+  DATASET_NAME="Grasp-Tools"
+  DATA_ROOT="${DATA_ROOT:-${REPO_ROOT}/datasets/grasp-tools/aug_graspall_v2}"
+  SPLIT_ROOT=""
 else
   DATASET_NAME="OCID-VLG"
   DATA_ROOT="${DATA_ROOT:-${REPO_ROOT}/datasets/OCID-VLG}"

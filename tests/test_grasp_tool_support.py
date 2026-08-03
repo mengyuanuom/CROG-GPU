@@ -64,6 +64,29 @@ class GraspToolSupportTest(unittest.TestCase):
         self.assertIn('"short": torch.from_numpy', adapter)
         self.assertIn('grasp_masks["off"]', adapter)
 
+    def test_auto_activation_matches_every_model_loss(self):
+        clamp_models = (
+            "model/crog.py",
+            "model/drog.py",
+            "model/toolrgs/lgd.py",
+            "model/toolrgs/ggcnnclip.py",
+            "model/toolrgs/grconvnetclip.py",
+            "model/toolrgs/etrg/model.py",
+        )
+        for relative_path in clamp_models:
+            with self.subTest(model=relative_path):
+                source = (ROOT / relative_path).read_text(encoding="utf-8")
+                self.assertIn('grasp_size_loss_activation = "clamp"', source)
+        drogoff = (ROOT / "model" / "drogoff.py").read_text(encoding="utf-8")
+        self.assertIn('grasp_size_loss_activation = "sigmoid"', drogoff)
+
+    def test_eight_npu_launcher_preserves_grasp_tool_root(self):
+        launcher = (ROOT / "tools" / "train_8npu.sh").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn('DATASET_NAME="Grasp-Tools"', launcher)
+        self.assertIn("datasets/grasp-tools/aug_graspall_v2", launcher)
+
 
 if __name__ == "__main__":
     unittest.main()

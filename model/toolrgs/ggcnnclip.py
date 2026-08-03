@@ -226,6 +226,8 @@ class GGCNN_CLIP(nn.Module):
     This allows you to plug it directly into train_with_grasp / validate_with_grasp.
     """
 
+    grasp_size_loss_activation = "clamp"
+
     def __init__(self, cfg):
         """
         Args:

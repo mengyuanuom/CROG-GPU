@@ -118,6 +118,7 @@ class ETRG(nn.Module):
     requires_depth = False
     supports_offset = False
     use_grasp_masks = True
+    grasp_size_loss_activation = "clamp"
 
     def __init__(self, cfg):
         super().__init__()

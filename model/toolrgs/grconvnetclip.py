@@ -182,6 +182,8 @@ class GenerativeResnetWithText(nn.Module):
 
 
 class GenerativeResnet_CLIP(nn.Module):
+    grasp_size_loss_activation = "clamp"
+
     def __init__(self, cfg):
         super().__init__()
 
