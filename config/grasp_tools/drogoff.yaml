@@ -31,7 +31,10 @@ TRAIN:
   fpn_in: [768, 768, 768]
   fpn_out: [256, 512, 1024]
   sync_bn: False
-  amp: True
+  # The dynamic grouped-convolution projector has an invalid NPU AMP backward
+  # path (128-vs-32 shape mismatch). Keep this model in stable FP32 mode.
+  amp: False
+  find_unused_parameters: False
   optimizer: adam
   pin_memory: False
   projector: dynamic
@@ -45,9 +48,9 @@ TRAIN:
   epochs: 36
   milestones: [30]
   start_epoch: 0
-  batch_size: 16  # global micro-batch; 2 samples per NPU with 8 NPUs
-  gradient_accumulation_steps: 2  # effective global batch remains 32
-  batch_size_val: 16
+  batch_size: 8  # single-card micro-batch
+  gradient_accumulation_steps: 4  # effective batch remains 32
+  batch_size_val: 8
   base_lr: 0.0001
   lr_decay: 0.1
   lr_multi: 1

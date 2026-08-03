@@ -352,11 +352,18 @@ def main_worker(local_rank, args):
         )
 
     model = model.to(args.device)
+    find_unused_parameters = bool(
+        getattr(args, "find_unused_parameters", True)
+    )
+    if args.rank == 0:
+        logger.info(
+            "DDP unused-parameter search: {}", find_unused_parameters
+        )
     model = nn.parallel.DistributedDataParallel(
         model,
         device_ids=[args.npu],
         output_device=args.npu,
-        find_unused_parameters=True,
+        find_unused_parameters=find_unused_parameters,
     )
 
     unwrapped_model = model.module

@@ -101,9 +101,10 @@ class GraspToolSupportTest(unittest.TestCase):
             )
         )
         train = cfg["TRAIN"]
-        self.assertTrue(train["amp"])
-        self.assertEqual(train["batch_size"], 16)
-        self.assertEqual(train["gradient_accumulation_steps"], 2)
+        self.assertFalse(train["amp"])
+        self.assertFalse(train["find_unused_parameters"])
+        self.assertEqual(train["batch_size"], 8)
+        self.assertEqual(train["gradient_accumulation_steps"], 4)
         self.assertEqual(
             train["batch_size"] * train["gradient_accumulation_steps"], 32
         )
@@ -112,6 +113,10 @@ class GraspToolSupportTest(unittest.TestCase):
         )
         self.assertIn("loss / window_size", engine)
         self.assertIn("if should_step:", engine)
+        runner = (ROOT / "train_crog.py").read_text(encoding="utf-8")
+        self.assertIn(
+            "find_unused_parameters=find_unused_parameters", runner
+        )
 
 
 if __name__ == "__main__":
