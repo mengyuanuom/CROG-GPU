@@ -67,7 +67,7 @@ class VCoTDrogoffSupportTest(unittest.TestCase):
         evaluator = (ROOT / "test_crog.py").read_text(encoding="utf-8")
         builder = (ROOT / "utils" / "data_builder.py").read_text(encoding="utf-8")
         engine = (ROOT / "engine" / "crog_engine.py").read_text(encoding="utf-8")
-        launcher = (ROOT / "tools" / "train_8npu.sh").read_text(encoding="utf-8")
+        launcher = (ROOT / "tools" / "train_gpu.sh").read_text(encoding="utf-8")
         self.assertEqual(trainer.count("build_referring_grasp_dataset("), 2)
         self.assertIn('"vcot_official"', trainer)
         self.assertIn("DistributedEvalSampler(val_data)", trainer)

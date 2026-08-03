@@ -5,15 +5,15 @@ set -Eeuo pipefail
 usage() {
   cat >&2 <<'EOF'
 Usage:
-  bash tools/train_8npu.sh <config.yaml>
+  bash tools/train_gpu.sh <config.yaml>
 
 Examples:
-  bash tools/train_8npu.sh config/OCID-VLG/crog_multiple_r50.yaml
-  bash tools/train_8npu.sh config/OCID-VLG/drog.yaml
-  bash tools/train_8npu.sh config/OCID-VLG/drogoff.yaml
-  bash tools/train_8npu.sh config/OCID-VLG/etrg.yaml
-  bash tools/train_8npu.sh config/grasp_tools/drogoff.yaml
-  bash tools/train_8npu.sh config/vcot/drogoff.yaml
+  bash tools/train_gpu.sh config/OCID-VLG/crog_multiple_r50.yaml
+  bash tools/train_gpu.sh config/OCID-VLG/drog.yaml
+  bash tools/train_gpu.sh config/OCID-VLG/drogoff.yaml
+  bash tools/train_gpu.sh config/OCID-VLG/etrg.yaml
+  bash tools/train_gpu.sh config/grasp_tools/drogoff.yaml
+  bash tools/train_gpu.sh config/vcot/drogoff.yaml
 EOF
 }
 
@@ -32,10 +32,13 @@ CONFIG="$1"
   exit 2
 }
 
-export ASCEND_RT_VISIBLE_DEVICES="${ASCEND_RT_VISIBLE_DEVICES:-0,1,2,3,4,5,6,7}"
+export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0}"
 export CROG_RUN_TIMESTAMP="${CROG_RUN_TIMESTAMP:-$(date +%Y%m%d_%H%M%S_%3N)}"
 
-NPROC_PER_NODE="${NPROC_PER_NODE:-8}"
+if [[ -z "${NPROC_PER_NODE:-}" ]]; then
+  IFS=',' read -r -a CUDA_DEVICE_LIST <<< "${CUDA_VISIBLE_DEVICES}"
+  NPROC_PER_NODE="${#CUDA_DEVICE_LIST[@]}"
+fi
 if grep -Eq '^[[:space:]]*dataset[[:space:]]*:[[:space:]]*vcot([[:space:]]|$)' "${CONFIG}"; then
   DATASET_NAME="VCoT/Grasp-Anything"
   DATA_ROOT="${DATA_ROOT:-${REPO_ROOT}/datasets/graspanything-vcot}"
@@ -104,7 +107,7 @@ echo "[launch] model family: ${MODEL_FAMILY}"
 echo "[launch] dataset: ${DATASET_NAME}"
 echo "[launch] data root: ${DATA_ROOT}"
 [[ -z "${SPLIT_ROOT}" ]] || echo "[launch] split root: ${SPLIT_ROOT}"
-echo "[launch] visible NPUs: ${ASCEND_RT_VISIBLE_DEVICES}"
+echo "[launch] visible GPUs: ${CUDA_VISIBLE_DEVICES}"
 echo "[launch] torchrun processes on this node: ${NPROC_PER_NODE}"
 
 torchrun \

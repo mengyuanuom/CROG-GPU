@@ -37,7 +37,7 @@ def download(output: Path) -> None:
     output.parent.mkdir(parents=True, exist_ok=True)
     temporary = output.with_name(output.name + ".part")
     request = urllib.request.Request(
-        URL, headers={"User-Agent": "CROG-NPU-weight-downloader/1.0"}
+        URL, headers={"User-Agent": "CROG-GPU-weight-downloader/1.0"}
     )
     print(f"[download] OpenAI CLIP RN50\n  from: {URL}\n  to:   {output}")
     try:

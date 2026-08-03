@@ -25,8 +25,10 @@ from ...adapter import DenseAligner
 logger = logging.getLogger("dinov2")
 
 
-# xFormers stochastic-depth helpers are CUDA-specific.
-XFORMERS_ENABLED = False
+# Prefer xFormers CUDA kernels when installed, with a portable fallback.
+XFORMERS_ENABLED = os.environ.get("XFORMERS_DISABLED", "0") not in {
+    "1", "true", "True"
+}
 try:
     if XFORMERS_ENABLED:
         from xformers.ops import fmha, scaled_index_add, index_select_cat

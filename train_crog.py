@@ -27,7 +27,7 @@ from model import build_model
 from utils.misc import (init_random_seed, set_random_seed, setup_logger,
                         worker_init_fn)
 from utils.lr_scheduler import rebuild_multistep_scheduler
-from utils.npu import build_grad_scaler, device_count, empty_cache, set_device
+from utils.cuda import build_grad_scaler, device_count, empty_cache, set_device
 
 warnings.filterwarnings("ignore")
 cv2.setNumThreads(0)
@@ -209,11 +209,11 @@ def main():
     args.local_rank = int(os.environ.get("LOCAL_RANK", 0))
     args.rank = int(os.environ.get("RANK", 0))
     args.world_size = int(os.environ.get("WORLD_SIZE", 1))
-    args.npus_per_node = int(os.environ.get("LOCAL_WORLD_SIZE", args.world_size))
-    if args.npus_per_node > device_count():
+    args.gpus_per_node = int(os.environ.get("LOCAL_WORLD_SIZE", args.world_size))
+    if args.gpus_per_node > device_count():
         raise RuntimeError(
-            f"torchrun requested {args.npus_per_node} processes, but only "
-            f"{device_count()} visible NPUs were found."
+            f"torchrun requested {args.gpus_per_node} processes, but only "
+            f"{device_count()} visible CUDA GPUs were found."
         )
     main_worker(args.local_rank, args)
 
@@ -223,8 +223,8 @@ def main_worker(local_rank, args):
     run_timestamp = os.environ.get("CROG_RUN_TIMESTAMP", "").strip()
     if not run_timestamp and args.world_size > 1:
         raise RuntimeError(
-            "Multi-NPU training requires one shared CROG_RUN_TIMESTAMP. "
-            "Launch through tools/train_8npu.sh or export it before torchrun."
+            "Multi-GPU training requires one shared CROG_RUN_TIMESTAMP. "
+            "Launch through tools/train_gpu.sh or export it before torchrun."
         )
     if not run_timestamp:
         run_timestamp = datetime.datetime.now().strftime(
@@ -247,7 +247,7 @@ def main_worker(local_rank, args):
             )
 
     # local rank & global rank
-    args.npu = local_rank
+    args.gpu = local_rank
     args.device = set_device(local_rank)
 
     # logger
@@ -261,13 +261,13 @@ def main_worker(local_rank, args):
     os.environ.setdefault("MASTER_ADDR", "127.0.0.1")
     os.environ.setdefault("MASTER_PORT", "29500")
     dist.init_process_group(
-        backend="hccl",
+        backend="nccl",
         init_method="env://",
         world_size=args.world_size,
         rank=args.rank,
     )
     print(
-        f"[HCCL] rank={args.rank}/{args.world_size} "
+        f"[NCCL] rank={args.rank}/{args.world_size} "
         f"local_rank={args.local_rank} device={args.device}",
         flush=True,
     )
@@ -319,21 +319,14 @@ def main_worker(local_rank, args):
         getattr(args, "architecture", "crog"),
         needs_offset,
     )
-    if args.sync_bn:
-        logger.warning(
-            "SyncBatchNorm is disabled for the Ascend NPU training path. "
-            "torch_npu SyncBatchNorm can trigger device-side AIVector/MTE "
-            "faults during multi-NPU training; using per-rank BatchNorm."
-        )
-        args.sync_bn = False
+    if args.sync_bn and args.world_size > 1:
+        model = nn.SyncBatchNorm.convert_sync_batchnorm(model)
+        logger.info("Converted BatchNorm layers to synchronized CUDA BatchNorm")
     logger.info(model)
     logger.info(args)
 
     # build optimizer & lr scheduler
-    # Ascend's multi-tensor ForeachAdd kernel can fail for heterogeneous
-    # parameter lists (ETRG is a common trigger). Use the stable per-tensor
-    # Adam path by default.
-    optimizer_foreach = bool(getattr(args, "optimizer_foreach", False))
+    optimizer_foreach = bool(getattr(args, "optimizer_foreach", True))
     optimizer = torch.optim.Adam(param_list,
                                  lr=args.base_lr,
                                  weight_decay=args.weight_decay,
@@ -361,8 +354,8 @@ def main_worker(local_rank, args):
         )
     model = nn.parallel.DistributedDataParallel(
         model,
-        device_ids=[args.npu],
-        output_device=args.npu,
+        device_ids=[args.gpu],
+        output_device=args.gpu,
         find_unused_parameters=find_unused_parameters,
     )
 

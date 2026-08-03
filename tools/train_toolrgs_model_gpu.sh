@@ -8,9 +8,12 @@ cd "${REPO_ROOT}"
 MODEL="${1:-drog}"
 CONFIG="config/OCID-VLG/${MODEL}.yaml"
 DATA_ROOT="${DATA_ROOT:-${REPO_ROOT}/datasets/OCID-VLG}"
-NPROC_PER_NODE="${NPROC_PER_NODE:-8}"
-EXP_NAME="${EXP_NAME:-${MODEL}_crog_protocol_8npu}"
-export ASCEND_RT_VISIBLE_DEVICES="${ASCEND_RT_VISIBLE_DEVICES:-0,1,2,3,4,5,6,7}"
+export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0}"
+if [[ -z "${NPROC_PER_NODE:-}" ]]; then
+  IFS=',' read -r -a CUDA_DEVICE_LIST <<< "${CUDA_VISIBLE_DEVICES}"
+  NPROC_PER_NODE="${#CUDA_DEVICE_LIST[@]}"
+fi
+EXP_NAME="${EXP_NAME:-${MODEL}_crog_protocol_gpu}"
 export CROG_RUN_TIMESTAMP="${CROG_RUN_TIMESTAMP:-$(date +%Y%m%d_%H%M%S_%3N)}"
 
 case "${MODEL}" in

@@ -32,10 +32,10 @@ TRAIN:
   fpn_in: [768, 768, 768] #dinov2 backbone
   fpn_out: [256, 512, 1024]
 
-  sync_bn: False
-  amp: False
+  sync_bn: True
+  amp: True
   optimizer: adam
-  pin_memory: False
+  pin_memory: True
   projector: dynamic
   # Decoder
   num_layers: 3
@@ -46,12 +46,12 @@ TRAIN:
 
   # Training Setting
   # Conservative per-process profile for two accelerators.
-  workers: 4  # per process; 32 workers total with eight NPUs
+  workers: 4  # per process; 32 workers total with eight GPUs
   workers_val: 2
   epochs: 24
   milestones: [20]
   start_epoch: 0
-  batch_size: 32  # global train batch size; 4 samples per process on 8 NPUs
+  batch_size: 32  # global train batch size; 4 samples per process on 8 GPUs
   batch_size_val: 32  # global validation batch size
   base_lr: 0.0001
   lr_decay: 0.1
@@ -61,7 +61,7 @@ TRAIN:
   manual_seed: 0
   print_freq: 100
   # Resume & Save
-  exp_name: drogoff_no_offset_ocid_vlg_8npu
+  exp_name: drogoff_no_offset_ocid_vlg_gpu
   offset_loss_weight: 1.0
   output_folder: exp/OCID-VLG
   save_freq: 0
@@ -71,10 +71,10 @@ TRAIN:
   weight:  # path to initial weight (default: none)
   resume: # path to latest checkpoint (default: none)
   evaluate: True
-  use_grasp_masks: True # evaluate on validation set, extra NPU memory needed and small batch_size_val is recommend
+  use_grasp_masks: True # evaluate on validation set, extra GPU memory needed and small batch_size_val is recommend
 Distributed:
   dist_url: env://
-  dist_backend: 'hccl'
+  dist_backend: 'nccl'
   multiprocessing_distributed: True
   world_size: 1
   rank: 0

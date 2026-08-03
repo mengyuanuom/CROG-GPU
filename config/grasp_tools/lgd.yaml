@@ -23,10 +23,10 @@ TRAIN:
   lgd_diffusion_weight: 1.0
   lgd_contrastive_weight: 0.001
   lgd_contrastive_temperature: 0.1
-  sync_bn: False
-  amp: False
+  sync_bn: True
+  amp: True
   optimizer: adam
-  pin_memory: False
+  pin_memory: True
   workers: 4
   workers_val: 2
   epochs: 36
@@ -41,7 +41,7 @@ TRAIN:
   max_norm: 0.0
   manual_seed: 0
   print_freq: 100
-  exp_name: lgd_grasp_tools_8npu
+  exp_name: lgd_grasp_tools_gpu
   output_folder: exp/grasp_tools
   save_freq: 0
   val_freq: 1
@@ -52,7 +52,7 @@ TRAIN:
   evaluate: True
 Distributed:
   dist_url: env://
-  dist_backend: hccl
+  dist_backend: nccl
   multiprocessing_distributed: True
   world_size: 1
   rank: 0

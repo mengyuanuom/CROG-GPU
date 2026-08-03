@@ -10,7 +10,7 @@ import torch.nn.functional as F
 from loguru import logger
 from utils.dataset import tokenize
 from utils.misc import (AverageMeter, ProgressMeter, trainMetricGPU, get_seg_image)
-from utils.npu import autocast
+from utils.cuda import autocast
 from utils.grasp_eval import (detect_grasps, calculate_iou, calculate_max_iou, calculate_jacquard_index, visualization)
 from utils.grasp_ablation import (
     filter_grasp_centres as filter_centres_inside_mask,

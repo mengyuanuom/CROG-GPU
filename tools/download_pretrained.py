@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Download official pretrained backbones used by ToolRGSNPU/CROG-NPU."""
+"""Download official pretrained backbones used by ToolRGS/CROG-GPU."""
 
 from __future__ import annotations
 

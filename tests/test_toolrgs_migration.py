@@ -47,7 +47,7 @@ class ToolRGSModelMigrationTest(unittest.TestCase):
                 )
                 self.assertRegex(
                     source,
-                    re.compile(r"^\s*amp:\s*False\s*$", re.MULTILINE),
+                re.compile(r"^\s*amp:\s*True\s*$", re.MULTILINE),
                 )
 
     def test_original_crog_stays_the_default_builder(self):
@@ -176,7 +176,7 @@ class ToolRGSModelMigrationTest(unittest.TestCase):
         self.assertRegex(stage2, r"(?m)^\s*stage1:\s*False\s*$")
         self.assertRegex(stage2, r"(?m)^\s*stage2:\s*True\s*$")
         self.assertIn(
-            "weight: exp/ocid_vlg/maplegrasp_stage1_ocid_vlg_8npu/"
+            "weight: exp/ocid_vlg/maplegrasp_stage1_ocid_vlg_gpu/"
             "best_iou_model.pth",
             stage2,
         )

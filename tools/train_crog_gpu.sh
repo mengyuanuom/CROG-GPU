@@ -3,4 +3,4 @@
 set -Eeuo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-exec bash "${SCRIPT_DIR}/train_8npu.sh" "$@"
+exec bash "${SCRIPT_DIR}/train_gpu.sh" "$@"

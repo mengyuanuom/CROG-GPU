@@ -1,4 +1,4 @@
-"""Ascend NPU adaptation of the official two-stage MapleGrasp model.
+"""CUDA adaptation of the official two-stage MapleGrasp model.
 
 Source: https://github.com/vineet2104/MapleGrasp
 Reference commit: c1b1f48e7ff24caaf39daa127d47d9469b93c7a1
@@ -6,7 +6,7 @@ Reference commit: c1b1f48e7ff24caaf39daa127d47d9469b93c7a1
 The model structure, parameter names, losses, hard 0.35 mask gate, and
 stage-1/stage-2 contract follow the official release. The only model-level
 changes are device-neutral execution, shape-safe mask resizing, and a fused
-grouped convolution that avoids non-zero-storage-offset split views on Ascend.
+grouped convolution that avoids non-zero-storage-offset split views.
 """
 
 import torch
@@ -18,7 +18,7 @@ from .crog_layers import FPN, TransformerDecoder, conv_layer
 
 
 class MultiTaskProjectorPP(nn.Module):
-    """Official MapleGrasp projector with an Ascend-safe grasp path."""
+    """Official MapleGrasp projector with a device-safe grasp path."""
 
     def __init__(
         self,
@@ -111,7 +111,7 @@ class MultiTaskProjectorPP(nn.Module):
         grasp_features = grasp_features * gate.unsqueeze(1)
 
         # Equivalent to upstream's four convolutions, fused to avoid split
-        # views with non-zero storage offsets on Ascend.
+        # views with non-zero storage offsets on some accelerator backends.
         grouped_input = grasp_features.reshape(
             1, batch_size * 4 * channels, height, width
         )
@@ -149,7 +149,7 @@ class MultiTaskProjectorPP(nn.Module):
 
 
 class MapleGrasp(nn.Module):
-    """Official MapleGrasp two-stage model adapted to the NPU runner."""
+    """Official MapleGrasp two-stage model adapted to the CUDA runner."""
 
     def __init__(self, cfg):
         super().__init__()

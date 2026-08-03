@@ -19,10 +19,10 @@ TRAIN:
   fpn_in: [512, 1024, 1024]
   fpn_out: [256, 512, 1024]
 
-  sync_bn: False
-  amp: False
+  sync_bn: True
+  amp: True
   optimizer: adam
-  pin_memory: False
+  pin_memory: True
   # Decoder
   num_layers: 3
   num_head: 8
@@ -30,7 +30,7 @@ TRAIN:
   dropout: 0.1
   intermediate: False
   # Training Setting
-  workers: 4  # per process; 32 workers total with eight NPUs
+  workers: 4  # per process; 32 workers total with eight GPUs
   workers_val: 2
   epochs: 24
   milestones: [20]
@@ -45,7 +45,7 @@ TRAIN:
   manual_seed: 0
   print_freq: 100
   # Resume & Save
-  exp_name: crogoff_ocid_vlg_8npu
+  exp_name: crogoff_ocid_vlg_gpu
   offset_loss_weight: 1.0
   output_folder: exp/ocid_vlg
   save_freq: 0
@@ -54,14 +54,14 @@ TRAIN:
   save_epochs: [5, 10]
   weight:
   resume:
-  evaluate: True  # evaluate on validation set, extra NPU memory needed and small batch_size_val is recommend
+  evaluate: True  # evaluate on validation set, extra GPU memory needed and small batch_size_val is recommend
   # Ablation study
   use_contrastive: True
   use_pretrained_clip: True
   use_grasp_masks: True
 Distributed:
   dist_url: env://
-  dist_backend: 'hccl'
+  dist_backend: 'nccl'
   multiprocessing_distributed: True
   world_size: 1
   rank: 0

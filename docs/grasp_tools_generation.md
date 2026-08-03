@@ -27,7 +27,7 @@ objects in metadata.json.
 
 ## Recommended generation
 
-From the CROG-NPU root:
+From the CROG-GPU root:
 
 ~~~bash
 python tools/dataset_converters/grasp_tools/augment.py --overwrite

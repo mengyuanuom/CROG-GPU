@@ -1,4 +1,4 @@
-"""Dataset selection shared by CROG-NPU training and evaluation."""
+"""Dataset selection shared by CROG-GPU training and evaluation."""
 
 from .dataset import OCIDVLGDataset
 from .grasp_tool_dataset import GraspToolDataset

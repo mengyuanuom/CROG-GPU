@@ -43,8 +43,8 @@ class MambaVisionFeatureExtractor(nn.Module):
             raise RuntimeError(
                 "GraspMamba requires the optional MambaVision dependency. "
                 "Install it with `pip install -r requirement-mamba.txt` after "
-                "installing the torch/torch_npu pair matching this Ascend server. "
-                "MambaVision NPU support depends on its installed operator build."
+                "installing a CUDA-enabled PyTorch build compatible with this "
+                "server. MambaVision requires compatible compiled CUDA operators."
             ) from exc
 
         model_kwargs = {"num_classes": 0}

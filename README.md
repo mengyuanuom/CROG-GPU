@@ -4,6 +4,11 @@ Created by Georgios Tziafas, Yucheng XU, Arushi Goel, Mohammadreza Kasaei, Zhibi
 
 This is an official PyTorch implementation of the baseline end-to-end model [CROG](https://arxiv.org/abs/2311.05779) of our work. The implementation of our CROG model is based on the [CRIS](https://github.com/DerrickWang005/CRIS.pytorch) model, thanks for their amazing work! :beers:
 
+> This repository is the CUDA/NCCL counterpart of `CROG-NPU`. It preserves the
+> newer model, dataset, evaluation and checkpoint features while replacing the
+> Ascend runtime with native NVIDIA GPU execution. See
+> [`docs/gpu_port.md`](docs/gpu_port.md) for the migration contract.
+
 Robots operating in human-centric environments require the integration of visual grounding and grasping capabilities to effectively manipulate objects based on user instructions. This work focuses on the task of referring grasp synthesis, which predicts a grasp pose for an object referred through natural language in cluttered scenes. Existing approaches often employ multi-stage pipelines that first segment the referred object and then propose a suitable grasp, and are evaluated in private datasets or simulators that do not capture the complexity of natural indoor scenes. To address these limitations, we develop a challenging benchmark based on cluttered indoor scenes from OCID dataset, for which we generate referring expressions and connect them with 4-DoF grasp poses. Further, we propose a novel end-to-end model (CROG) that leverages the visual grounding capabilities of CLIP to learn grasp synthesis directly from image-text pairs. Our results show that vanilla integration of CLIP with pretrained models transfers poorly in our challenging benchmark, while CROG achieves significant improvements both in terms of grounding and grasping. Extensive robot experiments in both simulation and hardware demonstrate the effectiveness of our approach in challenging interactive object grasping scenarios that include clutter.
 
 
@@ -28,20 +33,23 @@ Robots operating in human-centric environments require the integration of visual
 
 ## Quick Start
 
-This implementation only supports **multi-gpu**, **DistributedDataParallel** training, which is faster and simpler; single-gpu or DataParallel training is not supported. Besides, the evaluation only supports single-gpu mode. In our case, we train the CROG on 2 RTX-4090 GPUs. The training procedure takes around 3.5 hours. To do training of CROG with 2 GPUs, run:
+Training uses `DistributedDataParallel` for both single- and multi-GPU runs;
+evaluation supports either mode as well. For a two-GPU CROG run:
 
 ```
-python -u train_crog.py --config config/OCID-VLG/CROG_multiple_r50.yaml
+CUDA_VISIBLE_DEVICES=0,1 NPROC_PER_NODE=2 \
+  bash tools/train_gpu.sh config/OCID-VLG/crog_multiple_r50.yaml
 ```
 
 To do training of SSG with 2 GPUs, run:
 ```
-python -u train_ssg.py --config config/OCID-Grasp/ssg_r50.yaml
+CUDA_VISIBLE_DEVICES=0,1 torchrun --standalone --nproc_per_node=2 \
+  train_ssg.py --config config/OCID-Grasp/ssg_r50.yaml
 ```
 
 **Please remember to modify the path to the dataset in config files.**
 
-## Ascend NPU port
+## CUDA GPU version
 
 Every YAML under `config/` sets both training and validation batch size to
 `32`. CROG and DROG use Adam at `1e-4`; DROG-OFF uses `4e-4`. Every profile
@@ -56,7 +64,7 @@ to `TRAIN.exp_name` and therefore writes to a new directory, including resume
 launches. For example:
 
 ```text
-exp/ocid_vlg/ggcnnclip_ocid_vlg_8npu_20260731_143025_123/
+exp/ocid_vlg/ggcnnclip_ocid_vlg_gpu_20260731_143025_123/
 epoch_005_model.pth
 epoch_010_model.pth
 best_epoch_011_J1_90.92_J5_93.69.pth
@@ -65,25 +73,22 @@ best_epoch_011_J1_90.92_J5_93.69.pth
 Pure segmentation stages use `best_epoch_011_IoU_80.60.pth`. MapleGrasp
 Stage 2 automatically resolves its legacy Stage-1 path to the newest
 timestamped epoch+IoU checkpoint.
-Only the accelerator/runtime path is changed:
+The GPU version keeps the latest datasets, model registry, evaluation
+protocols, global-batch semantics and checkpoint policy from `CROG-NPU`, while
+using native CUDA execution:
 
-- explicit `torch_npu` device calls instead of CUDA calls;
-- HCCL and `torchrun` instead of NCCL and the in-process GPU launcher;
-- full FP32 on Ascend because AMP caused gradient overflow;
-- per-rank BatchNorm instead of SyncBatchNorm. The latter is deliberately
-  disabled because torch_npu SyncBatchNorm can produce device-side
-  AIVector/MTE faults during multi-NPU training;
-- CPU checkpoint loading followed by explicit optimizer-state migration;
-- per-tensor Adam updates by default (`foreach=False`) to avoid Ascend
-  `ForeachAddListV2` dynamic-kernel failures.
+- CUDA devices and mixed precision through `torch.cuda.amp`;
+- NCCL + `torchrun` for one or multiple GPUs;
+- optional synchronized BatchNorm for distributed CUDA training;
+- pinned host memory and Adam foreach updates by default;
+- optional xFormers acceleration for DINOv2, with a PyTorch fallback;
+- CPU checkpoint loading followed by explicit optimizer-state migration.
 
-Install the PyTorch/torch_npu pair matching the server's CANN release, then:
+Install a CUDA-enabled PyTorch and matching torchvision build, then:
 
 ```bash
-source /usr/local/Ascend/ascend-toolkit/set_env.sh
-pip install -r requirements-npu.txt
-# ETRG only: install the torchvision wheel matching this PyTorch build.
-python tools/check_npu_env.py
+pip install -r requirements-gpu.txt
+python tools/check_cuda_env.py
 ```
 
 Place OCID-VLG at `datasets/OCID-VLG`. CROG is RGB-only, so the training
@@ -91,39 +96,37 @@ dataset does not need a `depth/` directory and depth images are never loaded.
 The training launcher automatically
 downloads the official OpenAI CLIP RN50 checkpoint to `pretrain/RN50.pt` when
 it is absent and verifies its SHA-256 before training. Run the original CROG
-experiment on eight NPUs with:
+experiment on the GPUs listed in `CUDA_VISIBLE_DEVICES` with:
 
 ```bash
-bash tools/train_8npu.sh config/OCID-VLG/crog_multiple_r50.yaml
+bash tools/train_gpu.sh config/OCID-VLG/crog_multiple_r50.yaml
 ```
 
 Every training profile uses the same launcher and passes exactly one YAML path
-as its positional argument. The YAML fixes `TRAIN.amp: False`, and the launcher
-does not override it.
+as its positional argument. YAML profiles default to `TRAIN.amp: True`; set it
+to `False` for full FP32. The launcher never overrides this choice. Batch sizes
+are global; reduce `TRAIN.batch_size` and `TRAIN.batch_size_val` with `--opts`
+when a single GPU cannot fit the default profile.
 
-The FP32 path bypasses both autocast and `torch_npu.npu.amp.GradScaler`; it
-uses ordinary `loss.backward()` and `optimizer.step()` so a disabled scaler
-cannot still enter an Ascend overflow-status check.
-
-Evaluate a CROG checkpoint on one NPU with:
+Evaluate a CROG checkpoint on one GPU with:
 
 ```bash
-ASCEND_RT_VISIBLE_DEVICES=0 python3 test_crog.py \
+CUDA_VISIBLE_DEVICES=0 python3 test_crog.py \
   --config config/OCID-VLG/crog_multiple_r50.yaml \
   --opts DATA.root_path datasets/OCID-VLG \
-         TRAIN.resume exp/OCID-VLG_multiple_npu/CROG_official_multiple_R50_8npu/best_epoch_XXX_J1_XX.XX_J5_XX.XX.pth \
+         TRAIN.resume exp/OCID-VLG_multiple_gpu/CROG_official_multiple_R50_gpu/best_epoch_XXX_J1_XX.XX_J5_XX.XX.pth \
          TEST.test_split test
 ```
 
-For eight-NPU evaluation, the dataset is sharded without padding and the
-metrics are summed with HCCL:
+For multi-GPU evaluation, the dataset is sharded without padding and the
+metrics are summed with NCCL:
 
 ```bash
-ASCEND_RT_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 torchrun \
+CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 torchrun \
   --standalone --nproc_per_node=8 test_crog.py \
   --config config/OCID-VLG/crog_multiple_r50.yaml \
   --opts DATA.root_path datasets/OCID-VLG \
-         TRAIN.resume exp/OCID-VLG_multiple_npu/CROG_official_multiple_R50_8npu/best_epoch_XXX_J1_XX.XX_J5_XX.XX.pth \
+         TRAIN.resume exp/OCID-VLG_multiple_gpu/CROG_official_multiple_R50_gpu/best_epoch_XXX_J1_XX.XX_J5_XX.XX.pth \
          TEST.test_split test
 ```
 
@@ -146,17 +149,17 @@ It keeps the repository-wide 24-epoch schedule: no validation in epochs 1-10,
 recovery checkpoints at epochs 5 and 10, and validation every epoch from 11.
 The global batch size is 32 and the learning rate is `4e-4`.
 
-Train on eight NPUs:
+Train on eight GPUs:
 
 ```bash
-bash tools/train_8npu.sh config/vcot/drogoff.yaml
+bash tools/train_gpu.sh config/vcot/drogoff.yaml
 ```
 
 For a non-default location, set `DATA_ROOT` (and optionally `SPLIT_ROOT`) before
-the same command. Train on one selected NPU with:
+the same command. Train on one selected GPU with:
 
 ```bash
-ASCEND_RT_VISIBLE_DEVICES=3 python3 train_crog.py --config config/vcot/drogoff.yaml
+CUDA_VISIBLE_DEVICES=3 python3 train_crog.py --config config/vcot/drogoff.yaml
 ```
 
 VCoT evaluation uses the public paper protocol rather than CROG's historical
@@ -166,9 +169,9 @@ is logged as `GraspSR`, and the rolling best is named like
 `best_epoch_011_GraspSR_72.34.pth`. Evaluate the unseen split with:
 
 ```bash
-ASCEND_RT_VISIBLE_DEVICES=3 python3 test_crog.py \
+CUDA_VISIBLE_DEVICES=3 python3 test_crog.py \
   --config config/vcot/drogoff.yaml \
-  --opts TRAIN.resume exp/vcot/drogoff_vcot_8npu_TIMESTAMP/best_epoch_XXX_GraspSR_XX.XX.pth
+  --opts TRAIN.resume exp/vcot/drogoff_vcot_gpu_TIMESTAMP/best_epoch_XXX_GraspSR_XX.XX.pth
 ```
 
 The existing `config/OCID-VLG/*.yaml` profiles continue to use the unchanged
@@ -181,28 +184,28 @@ resulting grasp rectangles are judged by CROG's scoring functions. The launcher
 checks `pretrain/` and automatically downloads either missing official backbone
 before starting `torchrun`. Direct model construction performs the same check.
 
-Train DROG on eight NPUs:
+Train DROG on eight GPUs:
 
 ```bash
-bash tools/train_8npu.sh config/OCID-VLG/drog.yaml
+bash tools/train_gpu.sh config/OCID-VLG/drog.yaml
 ```
 
 Train DROG-OFF with the same launcher:
 
 ```bash
-bash tools/train_8npu.sh config/OCID-VLG/drogoff.yaml
+bash tools/train_gpu.sh config/OCID-VLG/drogoff.yaml
 ```
 
-Evaluate a DROG checkpoint on one NPU:
+Evaluate a DROG checkpoint on one GPU:
 
 ```bash
-ASCEND_RT_VISIBLE_DEVICES=0 python3 test_crog.py \
+CUDA_VISIBLE_DEVICES=0 python3 test_crog.py \
   --config config/OCID-VLG/drog.yaml \
-  --opts TRAIN.resume exp/OCID-VLG/drog_ocid_vlg_8npu/best_epoch_XXX_J1_XX.XX_J5_XX.XX.pth
+  --opts TRAIN.resume exp/OCID-VLG/drog_ocid_vlg_gpu/best_epoch_XXX_J1_XX.XX_J5_XX.XX.pth
 ```
 
 Use `config/OCID-VLG/drogoff.yaml` and the matching checkpoint for DROG-OFF.
-Eight-NPU evaluation uses the same `torchrun --nproc_per_node=8 test_crog.py`
+Multi-GPU evaluation uses the same `torchrun --nproc_per_node=8 test_crog.py`
 form documented above for CROG.
 
 This comparison intentionally preserves every historical CROG evaluation
@@ -233,11 +236,11 @@ centres inside that predicted mask. The no-offset profile still computes the
 offset head but ignores its output (and geometry resampling) during validation
 and testing.
 
-Evaluate both ablations on one NPU with the baseline checkpoint:
+Evaluate both ablations on one GPU with the baseline checkpoint:
 
 ```bash
-ASCEND_RT_VISIBLE_DEVICES=0 python3 test_crog.py --config config/OCID-VLG/drogoff_mask_filter.yaml --opts TRAIN.resume exp/OCID-VLG/drogoff_ocid_vlg_8npu/best_epoch_XXX_J1_XX.XX_J5_XX.XX.pth
-ASCEND_RT_VISIBLE_DEVICES=0 python3 test_crog.py --config config/OCID-VLG/drogoff_no_offset.yaml --opts TRAIN.resume exp/OCID-VLG/drogoff_ocid_vlg_8npu/best_epoch_XXX_J1_XX.XX_J5_XX.XX.pth
+CUDA_VISIBLE_DEVICES=0 python3 test_crog.py --config config/OCID-VLG/drogoff_mask_filter.yaml --opts TRAIN.resume exp/OCID-VLG/drogoff_ocid_vlg_gpu/best_epoch_XXX_J1_XX.XX_J5_XX.XX.pth
+CUDA_VISIBLE_DEVICES=0 python3 test_crog.py --config config/OCID-VLG/drogoff_no_offset.yaml --opts TRAIN.resume exp/OCID-VLG/drogoff_ocid_vlg_gpu/best_epoch_XXX_J1_XX.XX_J5_XX.XX.pth
 ```
 
 Change only the `TRAIN.resume` path if the baseline checkpoint is stored
@@ -278,8 +281,8 @@ If the server uses an HTTPS-inspecting proxy, point the downloader at the
 organization's PEM CA certificate:
 
 ```bash
-export CROG_NPU_CA_BUNDLE=/path/to/company-ca.pem
-bash tools/train_8npu.sh config/OCID-VLG/drogoff.yaml
+export CROG_GPU_CA_BUNDLE=/path/to/company-ca.pem
+bash tools/train_gpu.sh config/OCID-VLG/drogoff.yaml
 ```
 
 The downloader also recognizes `SSL_CERT_FILE`, `REQUESTS_CA_BUNDLE`, and
@@ -288,8 +291,8 @@ fallback below disables TLS verification and must only be used on a trusted
 network:
 
 ```bash
-CROG_NPU_INSECURE_DOWNLOAD=1 \
-  bash tools/train_8npu.sh config/OCID-VLG/drogoff.yaml
+CROG_GPU_INSECURE_DOWNLOAD=1 \
+  bash tools/train_gpu.sh config/OCID-VLG/drogoff.yaml
 ```
 
 For a one-off manual download, use `--ca-bundle FILE` or `--insecure`.
@@ -299,24 +302,24 @@ Custom locations can be supplied without editing files:
 
 ```bash
 DATA_ROOT=/data/OCID-VLG CLIP_WEIGHT=/data/RN50.pt \
-  bash tools/train_8npu.sh config/OCID-VLG/crog_multiple_r50.yaml
+  bash tools/train_gpu.sh config/OCID-VLG/crog_multiple_r50.yaml
 ```
 
-## MapleGrasp official two-stage NPU flow
+## MapleGrasp official two-stage GPU flow
 
 The MapleGrasp implementation follows the official
 [`vineet2104/MapleGrasp`](https://github.com/vineet2104/MapleGrasp) release at
 commit `c1b1f48e7ff24caaf39daa127d47d9469b93c7a1`. It preserves the official
 CLIP-RN50/FPN/transformer structure, projector parameter names, weighted BCE
 segmentation loss, four Smooth-L1 grasp losses, detached hard mask gate at
-`0.35`, and the required two-stage training order. NPU/HCCL execution, a
-shape-safe gate resize, and an Ascend-safe fused grouped convolution are the
+`0.35`, and the required two-stage training order. GPU/NCCL execution, a
+shape-safe gate resize, and an CUDA-safe fused grouped convolution are the
 runtime adaptations.
 
 Train Stage 1 (referred-object segmentation) first:
 
 ```bash
-bash tools/train_8npu.sh config/OCID-VLG/maplegrasp_stage1.yaml
+bash tools/train_gpu.sh config/OCID-VLG/maplegrasp_stage1.yaml
 ```
 
 Then train Stage 2. Its YAML uses `TRAIN.weight` to load Stage 1's
@@ -324,7 +327,7 @@ Then train Stage 2. Its YAML uses `TRAIN.weight` to load Stage 1's
 may be missing, matching the official flow:
 
 ```bash
-bash tools/train_8npu.sh config/OCID-VLG/maplegrasp_stage2.yaml
+bash tools/train_gpu.sh config/OCID-VLG/maplegrasp_stage2.yaml
 ```
 
 `TRAIN.weight` is only for the Stage-1-to-Stage-2 transition. To continue an
@@ -337,9 +340,9 @@ git tree. Consequently, this port keeps the CROG schedule used by the model
 base optimizer (Adam at `1e-4`); its schedule follows the repository-wide
 24-epoch, milestone-15 experiment setting.
 
-## ToolRGSNPU model comparison under the CROG protocol
+## ToolRGS model comparison under the CROG protocol
 
-The compatible RGB model implementations from ToolRGSNPU commit
+The compatible RGB model implementations from ToolRGS commit
 `c9b1af73ac359c14c13dbd0acb8492f8af3d6075` are isolated under
 `model/toolrgs/`. The original `model/crog.py`, `model/clip.py`, and
 `model/layers.py` remain the default CROG implementation.
@@ -360,12 +363,12 @@ the original CROG Jacquard test. CROGOFF and DROGOFF additionally translate
 the predicted grasp centre using their offset map before that same Jacquard
 test; the angle, width, thresholds and success criterion are unchanged.
 
-Run one model on eight NPUs with:
+Run one model on eight GPUs with:
 
 ```bash
-bash tools/train_toolrgs_model_8npu.sh drog
-bash tools/train_toolrgs_model_8npu.sh drogoff
-bash tools/train_toolrgs_model_8npu.sh etrg
+bash tools/train_toolrgs_model_gpu.sh drog
+bash tools/train_toolrgs_model_gpu.sh drogoff
+bash tools/train_toolrgs_model_gpu.sh etrg
 ```
 
 The launcher downloads and verifies the backbone weights required by the

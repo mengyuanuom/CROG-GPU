@@ -4,9 +4,9 @@
 The generator keeps each rendered scene only once and stores multiple language
 queries in the paired JSON file.  Every query contains a target_idx pointing to
 the target object.  Geometry is transformed consistently; grasp height remains
-20 pixels to match the current CROG-NPU grasp evaluation.
+20 pixels to match the current CROG-GPU grasp evaluation.
 
-Typical usage from the CROG-NPU repository root:
+Typical usage from the CROG-GPU repository root:
 
     python tools/dataset_converters/grasp_tools/augment.py
 

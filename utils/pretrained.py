@@ -1,4 +1,4 @@
-"""Safe on-demand downloads for official ToolRGSNPU/CROG-NPU backbones."""
+"""Safe on-demand downloads for official ToolRGS/CROG-GPU backbones."""
 
 from __future__ import annotations
 
@@ -112,12 +112,12 @@ def _acquire_lock(lock_path: Path, target: Path, artifact: PretrainedArtifact, t
 
 def _download_ssl_context(ca_bundle=None, insecure=None):
     if insecure is None:
-        insecure = os.environ.get("CROG_NPU_INSECURE_DOWNLOAD", "").lower() in {
+        insecure = os.environ.get("CROG_GPU_INSECURE_DOWNLOAD", "").lower() in {
             "1", "true", "yes", "on"
         }
     if ca_bundle is None:
         for variable in (
-            "CROG_NPU_CA_BUNDLE",
+            "CROG_GPU_CA_BUNDLE",
             "SSL_CERT_FILE",
             "REQUESTS_CA_BUNDLE",
             "CURL_CA_BUNDLE",
@@ -130,7 +130,7 @@ def _download_ssl_context(ca_bundle=None, insecure=None):
     if insecure:
         warnings.warn(
             "TLS certificate verification is disabled for weight downloads. "
-            "Use only on a trusted network and prefer CROG_NPU_CA_BUNDLE.",
+            "Use only on a trusted network and prefer CROG_GPU_CA_BUNDLE.",
             RuntimeWarning,
             stacklevel=2,
         )
@@ -189,7 +189,7 @@ def ensure_pretrained(
         ssl_context = _download_ssl_context(ca_bundle, insecure)
         request = urllib.request.Request(
             artifact.url,
-            headers={"User-Agent": "CROG-NPU-weight-downloader/1.0"},
+            headers={"User-Agent": "CROG-GPU-weight-downloader/1.0"},
         )
         print(
             f"[weights] missing; downloading {artifact.name}\n"
@@ -222,9 +222,9 @@ def ensure_pretrained(
             ):
                 certificate_help = (
                     "\nTLS certificate verification failed. Preferred fix:\n"
-                    "  export CROG_NPU_CA_BUNDLE=/path/to/company-ca.pem\n"
+                    "  export CROG_GPU_CA_BUNDLE=/path/to/company-ca.pem\n"
                     "Emergency fallback on a trusted network only:\n"
-                    "  export CROG_NPU_INSECURE_DOWNLOAD=1"
+                    "  export CROG_GPU_INSECURE_DOWNLOAD=1"
                 )
             raise RuntimeError(
                 f"Could not download {artifact.name} from:\n{artifact.url}\n"

@@ -1,4 +1,4 @@
-"""CROG-NPU integration of the official ETRG-A RGB architecture."""
+"""CROG-GPU integration of the official ETRG-A RGB architecture."""
 
 from pathlib import Path
 
@@ -47,7 +47,7 @@ def _build_depth_backbone(cfg):
         import torchvision
     except (ImportError, OSError) as exc:
         raise RuntimeError(
-            "ETRG requires torchvision matching the installed PyTorch/NPU build."
+            "ETRG requires torchvision matching the installed PyTorch/CUDA build."
         ) from exc
 
     local_weight = getattr(cfg, "depth_pretrain", None)
@@ -125,7 +125,7 @@ class ETRG(nn.Module):
         self.input_mode = str(getattr(cfg, "etrg_input_mode", "rgb")).lower()
         if self.input_mode != "rgb":
             raise ValueError(
-                "CROG-NPU ETRG is RGB-only; etrg_input_mode must be 'rgb', "
+                "CROG-GPU ETRG is RGB-only; etrg_input_mode must be 'rgb', "
                 f"got {self.input_mode!r}"
             )
         clip_pretrain = ensure_pretrained(cfg.clip_pretrain, "clip-rn50")

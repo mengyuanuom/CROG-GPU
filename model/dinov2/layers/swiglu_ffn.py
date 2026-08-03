@@ -34,8 +34,10 @@ class SwiGLUFFN(nn.Module):
         return self.w3(hidden)
 
 
-# The fused xFormers SwiGLU kernel is CUDA-specific.
-XFORMERS_ENABLED = False
+# Prefer the fused xFormers CUDA kernel when installed.
+XFORMERS_ENABLED = os.environ.get("XFORMERS_DISABLED", "0") not in {
+    "1", "true", "True"
+}
 try:
     if XFORMERS_ENABLED:
         from xformers.ops import SwiGLU

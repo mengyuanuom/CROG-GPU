@@ -467,7 +467,7 @@ class MultiTaskProjector(nn.Module):
         bias = dynamic_params[:, -1].contiguous()
 
         # A single groups=(batch * heads) convolution has a very large
-        # Conv2DBackpropInput workspace on Ascend. Run the five equivalent
+        # backward workspaces. Run the five equivalent
         # per-head convolutions in sequence. Explicit contiguous copies avoid
         # the non-zero storage_offset issue of selecting one head from a view.
         branch_features = x.reshape(

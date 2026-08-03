@@ -16,9 +16,9 @@ TRAIN:
   vis_dim: 512
   fpn_in: [512, 1024, 1024]
   fpn_out: [256, 512, 1024]
-  sync_bn: False  # torch_npu SyncBatchNorm can trigger AIVector/MTE faults
-  amp: False  # required on Ascend: AMP=True caused gradient overflow
-  pin_memory: False
+  sync_bn: True
+  amp: True  # CUDA mixed precision
+  pin_memory: True
   # Decoder
   num_layers: 3
   num_head: 8
@@ -31,7 +31,7 @@ TRAIN:
   epochs: 36
   milestones: [30]
   start_epoch: 0
-  batch_size: 32  # global train batch size; 4 samples per process on 8 NPUs
+  batch_size: 32  # global train batch size; 4 samples per process on 8 GPUs
   batch_size_val: 32  # global validation batch size
   base_lr: 0.0001
   lr_decay: 0.1
@@ -41,7 +41,7 @@ TRAIN:
   manual_seed: 0
   print_freq: 100
   # Resume & Save
-  exp_name: CROG_official_multiple_R50_8npu
+  exp_name: CROG_official_multiple_R50_gpu
   output_folder: exp/OCID-VLG_multiple_npu
   save_freq: 0
   val_freq: 1
@@ -56,7 +56,7 @@ TRAIN:
   use_grasp_masks: True
 Distributed:
   dist_url: env://
-  dist_backend: 'hccl'
+  dist_backend: 'nccl'
   multiprocessing_distributed: True
   world_size: 1
   rank: 0

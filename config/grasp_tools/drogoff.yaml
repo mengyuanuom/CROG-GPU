@@ -30,13 +30,12 @@ TRAIN:
   vis_dim: 512
   fpn_in: [768, 768, 768]
   fpn_out: [256, 512, 1024]
-  sync_bn: False
-  # The dynamic grouped-convolution projector has an invalid NPU AMP backward
+  sync_bn: True
   # path (128-vs-32 shape mismatch). Keep this model in stable FP32 mode.
-  amp: False
+  amp: True
   find_unused_parameters: False
   optimizer: adam
-  pin_memory: False
+  pin_memory: True
   projector: dynamic
   num_layers: 3
   num_head: 8
@@ -57,7 +56,7 @@ TRAIN:
   max_norm: 0.0
   manual_seed: 0
   print_freq: 100
-  exp_name: drogoff_grasp_tools_8npu
+  exp_name: drogoff_grasp_tools_gpu
   offset_loss_weight: 1.0
   output_folder: exp/grasp_tools
   save_freq: 0
@@ -70,7 +69,7 @@ TRAIN:
   use_grasp_masks: True
 Distributed:
   dist_url: env://
-  dist_backend: hccl
+  dist_backend: nccl
   multiprocessing_distributed: True
   world_size: 1
   rank: 0

@@ -13,7 +13,7 @@ TRAIN:
   vis_dim: 512
   fpn_in: [512, 1024, 1024]
   fpn_out: [256, 512, 1024]
-  sync_bn: False  # torch_npu SyncBatchNorm can trigger AIVector/MTE faults
+  sync_bn: True
   # Decoder
   num_layers: 3
   num_head: 8
@@ -26,7 +26,7 @@ TRAIN:
   epochs: 24
   milestones: [20]
   start_epoch: 0
-  batch_size: 32  # global train batch size; 4 samples per process on 8 NPUs
+  batch_size: 32  # global train batch size; 4 samples per process on 8 GPUs
   batch_size_val: 32  # batch size for validation during training, memory and speed tradeoff
   base_lr: 0.0001
   lr_decay: 0.1

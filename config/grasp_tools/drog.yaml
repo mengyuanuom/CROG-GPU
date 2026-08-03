@@ -30,10 +30,10 @@ TRAIN:
   vis_dim: 512
   fpn_in: [768, 768, 768]
   fpn_out: [256, 512, 1024]
-  sync_bn: False
-  amp: False
+  sync_bn: True
+  amp: True
   optimizer: adam
-  pin_memory: False
+  pin_memory: True
   projector: dynamic
   num_layers: 3
   num_head: 8
@@ -54,7 +54,7 @@ TRAIN:
   max_norm: 0.0
   manual_seed: 0
   print_freq: 100
-  exp_name: drog_grasp_tools_8npu
+  exp_name: drog_grasp_tools_gpu
   output_folder: exp/grasp_tools
   save_freq: 0
   val_freq: 1
@@ -66,7 +66,7 @@ TRAIN:
   use_grasp_masks: True
 Distributed:
   dist_url: env://
-  dist_backend: hccl
+  dist_backend: nccl
   multiprocessing_distributed: True
   world_size: 1
   rank: 0

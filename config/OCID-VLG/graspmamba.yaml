@@ -21,11 +21,11 @@ TRAIN:
   word_len: 17
   word_dim: 1024
 
-  sync_bn: False
-  amp: False
+  sync_bn: True
+  amp: True
   optimizer: adam
-  pin_memory: False
-  workers: 4  # per process; 32 workers total with eight NPUs
+  pin_memory: True
+  workers: 4  # per process; 32 workers total with eight GPUs
   workers_val: 2
   epochs: 24
   milestones: [20]
@@ -39,7 +39,7 @@ TRAIN:
   max_norm: 1.0
   manual_seed: 0
   print_freq: 100
-  exp_name: graspmamba_ocid_vlg_8npu
+  exp_name: graspmamba_ocid_vlg_gpu
   output_folder: exp/ocid_vlg
   save_freq: 0
   val_freq: 1
@@ -51,7 +51,7 @@ TRAIN:
   use_grasp_masks: True
 Distributed:
   dist_url: env://
-  dist_backend: hccl
+  dist_backend: nccl
   multiprocessing_distributed: True
   world_size: 1
   rank: 0

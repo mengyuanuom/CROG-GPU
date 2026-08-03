@@ -88,20 +88,20 @@ class GraspToolSupportTest(unittest.TestCase):
         self.assertIn('grasp_size_loss_activation = "sigmoid"', drogoff)
 
     def test_eight_npu_launcher_preserves_grasp_tool_root(self):
-        launcher = (ROOT / "tools" / "train_8npu.sh").read_text(
+        launcher = (ROOT / "tools" / "train_gpu.sh").read_text(
             encoding="utf-8"
         )
         self.assertIn('DATASET_NAME="Grasp-Tools"', launcher)
         self.assertIn("datasets/grasp-tools/aug_graspall_v2", launcher)
 
-    def test_drogoff_uses_true_single_card_batch_32(self):
+    def test_drogoff_uses_amp_and_global_batch_32(self):
         cfg = yaml.safe_load(
             (ROOT / "config" / "grasp_tools" / "drogoff.yaml").read_text(
                 encoding="utf-8"
             )
         )
         train = cfg["TRAIN"]
-        self.assertFalse(train["amp"])
+        self.assertTrue(train["amp"])
         self.assertFalse(train["find_unused_parameters"])
         self.assertEqual(train["batch_size"], 32)
         self.assertEqual(train["batch_size_val"], 32)

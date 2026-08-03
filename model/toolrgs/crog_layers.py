@@ -62,7 +62,7 @@ class MultiTaskProjector(nn.Module):
         self.txt = nn.Linear(word_dim, out_dim)
 
     def forward(self, x, word):
-        """Apply the five text-conditioned heads in one NPU-safe grouped conv."""
+        """Apply the five text-conditioned heads in one grouped convolution."""
         x = self.vis(x)
         batch_size, total_channels, height, width = x.shape
         branch_count = 5
@@ -80,7 +80,7 @@ class MultiTaskProjector(nn.Module):
 
         # Arrange groups as (sample 0/head 0..4, sample 1/head 0..4, ...).
         # This is mathematically equivalent to five separate grouped convs but
-        # avoids split views with non-zero storage offsets on Ascend.
+        # avoids split views with non-zero storage offsets.
         grouped_input = x.reshape(
             1, batch_size * branch_count * channels, height, width
         )

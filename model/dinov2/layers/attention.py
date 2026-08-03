@@ -18,9 +18,11 @@ from torch import nn
 logger = logging.getLogger("dinov2")
 
 
-# xFormers kernels are CUDA-specific. ToolRGSNPU always uses the portable
-# PyTorch attention path so tensors remain on Ascend.
-XFORMERS_ENABLED = False
+# Prefer xFormers CUDA kernels when installed; set XFORMERS_DISABLED=1 to use
+# the portable PyTorch implementation.
+XFORMERS_ENABLED = os.environ.get("XFORMERS_DISABLED", "0") not in {
+    "1", "true", "True"
+}
 try:
     if XFORMERS_ENABLED:
         from xformers.ops import memory_efficient_attention, unbind

@@ -25,13 +25,13 @@ TRAIN:
   vis_dim: 512
   fpn_in: [512, 1024, 1024]
   fpn_out: [256, 512, 1024]
-  sync_bn: False
+  sync_bn: True
   num_layers: 3
   num_head: 8
   dim_ffn: 512
   dropout: 0.1
   intermediate: False
-  workers: 4  # per process; 32 workers total with eight NPUs
+  workers: 4  # per process; 32 workers total with eight GPUs
   workers_val: 2
   epochs: 36
   milestones: [30]
@@ -45,11 +45,11 @@ TRAIN:
   max_norm: 0.0
   manual_seed: 0
   print_freq: 100
-  amp: False
+  amp: True
   optimizer: adam
-  optimizer_foreach: False
-  pin_memory: False
-  exp_name: etrg_r50_ocid_vlg_8npu
+  optimizer_foreach: True
+  pin_memory: True
+  exp_name: etrg_r50_ocid_vlg_gpu
   output_folder: exp/ocid_vlg
   save_freq: 0
   val_freq: 1
@@ -60,7 +60,7 @@ TRAIN:
   evaluate: True
 Distributed:
   dist_url: env://
-  dist_backend: hccl
+  dist_backend: nccl
   multiprocessing_distributed: True
   world_size: 1
   rank: 0

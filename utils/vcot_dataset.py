@@ -1,4 +1,4 @@
-"""VCoT/Grasp-Anything dataset adapter for CROG-NPU.
+"""VCoT/Grasp-Anything dataset adapter for CROG-GPU.
 
 The split CSV is lightweight metadata. Images, grasp tensors, and masks are
 loaded lazily, one sample at a time, from the Grasp-Anything dataset root.
@@ -34,7 +34,7 @@ def load_vcot_grasps(path):
 
 
 class VCoTDataset(Dataset):
-    """Adapt VCoT split metadata and Grasp-Anything files to CROG-NPU."""
+    """Adapt VCoT split metadata and Grasp-Anything files to CROG-GPU."""
 
     def __init__(
         self,

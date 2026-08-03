@@ -41,7 +41,7 @@ class MultiTaskProjector(nn.Module):
             word: b, 512
         '''
         x = self.vis(x)
-        # ``chunk`` maps more consistently than ``tensor_split`` on Ascend.
+        # ``chunk`` avoids materializing an unnecessary list of split sizes.
         x = torch.chunk(x, 5, dim=1)
 
         mask_x = x[0]

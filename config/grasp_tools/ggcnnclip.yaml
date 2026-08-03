@@ -15,10 +15,10 @@ TRAIN:
   input_size: 416
   word_len: 32
   word_dim: 1024
-  amp: False
-  sync_bn: False
+  amp: True
+  sync_bn: True
   optimizer: adam
-  pin_memory: False
+  pin_memory: True
   workers: 4
   workers_val: 2
   epochs: 36
@@ -33,7 +33,7 @@ TRAIN:
   max_norm: 0.0
   manual_seed: 0
   print_freq: 100
-  exp_name: ggcnnclip_grasp_tools_8npu
+  exp_name: ggcnnclip_grasp_tools_gpu
   output_folder: exp/grasp_tools
   save_freq: 0
   val_freq: 1
@@ -46,7 +46,7 @@ TRAIN:
   use_grasp_masks: True
 Distributed:
   dist_url: env://
-  dist_backend: hccl
+  dist_backend: nccl
   multiprocessing_distributed: True
   world_size: 1
   rank: 0

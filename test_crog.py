@@ -13,7 +13,7 @@ from engine.crog_engine import inference_with_grasp
 from model import build_model
 from utils.data_builder import build_referring_grasp_dataset
 from utils.misc import setup_logger
-from utils.npu import set_device
+from utils.cuda import set_device
 
 warnings.filterwarnings("ignore")
 cv2.setNumThreads(0)
@@ -57,14 +57,14 @@ def main():
             "Unsupported evaluation protocol; choose crog_legacy or vcot_official."
         )
     args.evaluation_protocol = protocol_aliases[evaluation_protocol]
-    args.npu = int(os.environ.get("LOCAL_RANK", 0))
+    args.gpu = int(os.environ.get("LOCAL_RANK", 0))
     args.rank = int(os.environ.get("RANK", 0))
     args.world_size = int(os.environ.get("WORLD_SIZE", 1))
     args.distributed = args.world_size > 1
-    args.device = set_device(args.npu)
+    args.device = set_device(args.gpu)
     if args.distributed:
         dist.init_process_group(
-            backend="hccl",
+            backend="nccl",
             init_method="env://",
             rank=args.rank,
             world_size=args.world_size,

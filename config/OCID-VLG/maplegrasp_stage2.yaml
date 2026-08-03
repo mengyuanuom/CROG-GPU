@@ -17,10 +17,10 @@ TRAIN:
   vis_dim: 512
   fpn_in: [512, 1024, 1024]
   fpn_out: [256, 512, 1024]
-  sync_bn: False
-  amp: False
+  sync_bn: True
+  amp: True
   optimizer: adam
-  pin_memory: False
+  pin_memory: True
   num_layers: 3
   num_head: 8
   dim_ffn: 2048
@@ -43,12 +43,12 @@ TRAIN:
   base_lr: 0.0001
   lr_decay: 0.1
   lr_multi: 0.1
-  weight: exp/ocid_vlg/maplegrasp_stage1_ocid_vlg_8npu/best_iou_model.pth
+  weight: exp/ocid_vlg/maplegrasp_stage1_ocid_vlg_gpu/best_iou_model.pth
   weight_decay: 0.0
   max_norm: 0.0
   manual_seed: 0
   print_freq: 100
-  exp_name: maplegrasp_stage2_ocid_vlg_8npu
+  exp_name: maplegrasp_stage2_ocid_vlg_gpu
   output_folder: exp/ocid_vlg
   save_freq: 0
   val_freq: 1
@@ -58,7 +58,7 @@ TRAIN:
   evaluate: True
 Distributed:
   dist_url: env://
-  dist_backend: hccl
+  dist_backend: nccl
   multiprocessing_distributed: True
   world_size: 1
   rank: 0
