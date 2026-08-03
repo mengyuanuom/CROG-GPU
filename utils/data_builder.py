@@ -34,6 +34,9 @@ def build_referring_grasp_dataset(args, split, with_grasp_offset=False):
         return GraspToolDataset(
             **common,
             with_offset=with_grasp_offset,
+            with_short_side=bool(
+                getattr(args, "predict_grasp_short_side", False)
+            ),
             offset_radius=float(getattr(args, "offset_r", 20.0)),
             offset_sigma=getattr(args, "offset_sigma", None),
             dynamic_train_prompts=bool(

@@ -48,14 +48,14 @@ class GraspToolSupportTest(unittest.TestCase):
                 )
                 self.assertEqual(cfg["TEST"]["grasp_size_activation"], "auto")
 
-    def test_drogoff_predicts_both_grasp_size_directions(self):
+    def test_drogoff_skips_fixed_generator_short_side(self):
         cfg = yaml.safe_load(
             (ROOT / "config" / "grasp_tools" / "drogoff.yaml").read_text(
                 encoding="utf-8"
             )
         )
-        self.assertTrue(cfg["TRAIN"]["predict_grasp_short_side"])
-        self.assertEqual(cfg["TRAIN"]["short_side_loss_weight"], 1.0)
+        self.assertFalse(cfg["TRAIN"].get("predict_grasp_short_side", False))
+        self.assertNotIn("short_side_loss_weight", cfg["TRAIN"])
         self.assertTrue(cfg["TEST"]["use_offset_at_inference"])
 
     def test_builder_and_adapter_cover_schema_v21(self):
@@ -66,7 +66,9 @@ class GraspToolSupportTest(unittest.TestCase):
         self.assertIn("return GraspToolDataset(", builder)
         self.assertIn('index_path = os.path.join(split_dir, "index.jsonl")', adapter)
         self.assertIn('query = queries[query_index]', adapter)
-        self.assertIn('"short": torch.from_numpy', adapter)
+        self.assertIn("include_short=self.with_short_side", adapter)
+        self.assertIn('if self.with_short_side:', adapter)
+        self.assertIn('getattr(args, "predict_grasp_short_side", False)', builder)
         self.assertIn('grasp_masks["off"]', adapter)
 
     def test_auto_activation_matches_every_model_loss(self):

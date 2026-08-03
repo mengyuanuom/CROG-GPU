@@ -57,8 +57,6 @@ TRAIN:
   print_freq: 100
   exp_name: drogoff_grasp_tools_8npu
   offset_loss_weight: 1.0
-  predict_grasp_short_side: True
-  short_side_loss_weight: 1.0
   output_folder: exp/grasp_tools
   save_freq: 0
   val_freq: 1
