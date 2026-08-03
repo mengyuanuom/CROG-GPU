@@ -74,7 +74,10 @@ class OfficialCROGNPUConfigTest(unittest.TestCase):
         for path in sorted(config_dir.rglob("*.yaml")):
             source = path.read_text(encoding="utf-8")
             relative_config = path.relative_to(config_dir).as_posix()
-            is_long_run = relative_config in long_schedule
+            is_long_run = (
+                relative_config in long_schedule
+                or relative_config.startswith("grasp_tools/")
+            )
             expected_epochs = 36 if is_long_run else 24
             expected_milestone = 30 if is_long_run else 20
             with self.subTest(config=relative_config):

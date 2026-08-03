@@ -48,9 +48,8 @@ TRAIN:
   epochs: 36
   milestones: [30]
   start_epoch: 0
-  batch_size: 8  # single-card micro-batch
-  gradient_accumulation_steps: 4  # effective batch remains 32
-  batch_size_val: 8
+  batch_size: 32  # single-card batch size
+  batch_size_val: 32
   base_lr: 0.0001
   lr_decay: 0.1
   lr_multi: 1

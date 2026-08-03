@@ -450,7 +450,7 @@ class MultiTaskProjector(nn.Module):
         self.txt = nn.Linear(word_dim, out_dim)
 
     def forward(self, x, word):
-        """Apply the five text-conditioned heads in one NPU-safe grouped conv."""
+        """Apply heads sequentially to bound grouped-convolution workspace."""
         x = self.vis(x)
         batch_size, total_channels, height, width = x.shape
         branch_count = 5
@@ -463,47 +463,30 @@ class MultiTaskProjector(nn.Module):
         dynamic_params = self.txt(word)
         weight = dynamic_params[:, :-1].reshape(
             batch_size, channels, self.kernel_size, self.kernel_size
-        )
-        bias = dynamic_params[:, -1]
+        ).contiguous()
+        bias = dynamic_params[:, -1].contiguous()
 
-        # Arrange groups as (sample 0/head 0..4, sample 1/head 0..4, ...).
-        # This is mathematically equivalent to five separate grouped convs but
-        # avoids split views with non-zero storage offsets on Ascend.
-        grouped_input = x.reshape(
-            1, batch_size * branch_count * channels, height, width
+        # A single groups=(batch * heads) convolution has a very large
+        # Conv2DBackpropInput workspace on Ascend. Run the five equivalent
+        # per-head convolutions in sequence. Explicit contiguous copies avoid
+        # the non-zero storage_offset issue of selecting one head from a view.
+        branch_features = x.reshape(
+            batch_size, branch_count, channels, height, width
         )
-        grouped_weight = (
-            weight[:, None]
-            .expand(-1, branch_count, -1, -1, -1)
-            .reshape(
-                batch_size * branch_count,
-                channels,
-                self.kernel_size,
-                self.kernel_size,
+        outputs = []
+        for branch_index in range(branch_count):
+            grouped_input = branch_features[:, branch_index].contiguous().reshape(
+                1, batch_size * channels, height, width
             )
-            .contiguous()
-        )
-        grouped_bias = (
-            bias[:, None]
-            .expand(-1, branch_count)
-            .reshape(batch_size * branch_count)
-            .contiguous()
-        )
-        output = F.conv2d(
-            grouped_input,
-            grouped_weight,
-            bias=grouped_bias,
-            padding=self.kernel_size // 2,
-            groups=batch_size * branch_count,
-        ).reshape(batch_size, branch_count, height, width)
-        return tuple(
-            torch.index_select(
-                output,
-                1,
-                torch.arange(index, index + 1, device=output.device),
-            )
-            for index in range(branch_count)
-        )
+            output = F.conv2d(
+                grouped_input,
+                weight,
+                bias=bias,
+                padding=self.kernel_size // 2,
+                groups=batch_size,
+            ).reshape(batch_size, 1, height, width)
+            outputs.append(output)
+        return tuple(outputs)
 
 class OffsetMultiTaskProjector(nn.Module):
     """DROG projector with offset and an optional grasp short-side head."""

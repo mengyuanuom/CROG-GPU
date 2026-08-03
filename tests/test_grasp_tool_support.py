@@ -94,7 +94,7 @@ class GraspToolSupportTest(unittest.TestCase):
         self.assertIn('DATASET_NAME="Grasp-Tools"', launcher)
         self.assertIn("datasets/grasp-tools/aug_graspall_v2", launcher)
 
-    def test_drogoff_uses_memory_safe_effective_batch(self):
+    def test_drogoff_uses_true_single_card_batch_32(self):
         cfg = yaml.safe_load(
             (ROOT / "config" / "grasp_tools" / "drogoff.yaml").read_text(
                 encoding="utf-8"
@@ -103,20 +103,22 @@ class GraspToolSupportTest(unittest.TestCase):
         train = cfg["TRAIN"]
         self.assertFalse(train["amp"])
         self.assertFalse(train["find_unused_parameters"])
-        self.assertEqual(train["batch_size"], 8)
-        self.assertEqual(train["gradient_accumulation_steps"], 4)
-        self.assertEqual(
-            train["batch_size"] * train["gradient_accumulation_steps"], 32
-        )
-        engine = (ROOT / "engine" / "crog_engine.py").read_text(
-            encoding="utf-8"
-        )
-        self.assertIn("loss / window_size", engine)
-        self.assertIn("if should_step:", engine)
+        self.assertEqual(train["batch_size"], 32)
+        self.assertEqual(train["batch_size_val"], 32)
+        self.assertNotIn("gradient_accumulation_steps", train)
         runner = (ROOT / "train_crog.py").read_text(encoding="utf-8")
         self.assertIn(
             "find_unused_parameters=find_unused_parameters", runner
         )
+        layers = (ROOT / "model" / "drog_layers.py").read_text(
+            encoding="utf-8"
+        )
+        projector = layers.split("class MultiTaskProjector", 1)[1].split(
+            "class OffsetMultiTaskProjector", 1
+        )[0]
+        self.assertIn("groups=batch_size,", projector)
+        self.assertNotIn("groups=batch_size * branch_count", projector)
+        self.assertIn("branch_features[:, branch_index].contiguous()", projector)
 
 
 if __name__ == "__main__":
