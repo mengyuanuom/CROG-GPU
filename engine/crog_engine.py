@@ -231,6 +231,12 @@ def train_with_grasp(train_loader, model, optimizer, scheduler, scaler, epoch, a
     model.train()
     time.sleep(2)
     end = time.time()
+    accumulation_steps = int(
+        getattr(args, "gradient_accumulation_steps", 1)
+    )
+    if accumulation_steps <= 0:
+        raise ValueError("gradient_accumulation_steps must be positive")
+    optimizer.zero_grad()
 
     # size_list = [320, 352, 384, 416, 448, 480, 512]
     # idx = np.random.choice(len(size_list))
@@ -287,14 +293,24 @@ def train_with_grasp(train_loader, model, optimizer, scheduler, scaler, epoch, a
         ins_mask_pred = pred[0]
         ins_mask_target = target[0]
 
-        # backward
-        optimizer.zero_grad()
-        scaler.scale(loss).backward()
-        if args.max_norm:
-            scaler.unscale_(optimizer)
-            torch.nn.utils.clip_grad_norm_(model.parameters(), args.max_norm)
-        scaler.step(optimizer)
-        scaler.update()
+        # Accumulate smaller micro-batches to reduce the activation-memory peak
+        # while retaining the configured effective global batch size.
+        window_start = (i // accumulation_steps) * accumulation_steps
+        window_size = min(
+            accumulation_steps, len(train_loader) - window_start
+        )
+        should_step = (
+            (i + 1) % accumulation_steps == 0
+            or (i + 1) == len(train_loader)
+        )
+        scaler.scale(loss / window_size).backward()
+        if should_step:
+            if args.max_norm:
+                scaler.unscale_(optimizer)
+                torch.nn.utils.clip_grad_norm_(model.parameters(), args.max_norm)
+            scaler.step(optimizer)
+            scaler.update()
+            optimizer.zero_grad()
 
         # metric
         iou, pr5 = trainMetricGPU(ins_mask_pred, ins_mask_target, 0.35, 0.5)

@@ -385,12 +385,30 @@ def main_worker(local_rank, args):
             f"Official global validation batch size {args.batch_size_val} must be "
             f"divisible by world size {args.world_size}."
         )
+    args.gradient_accumulation_steps = int(
+        getattr(args, "gradient_accumulation_steps", 1)
+    )
+    if args.gradient_accumulation_steps <= 0:
+        raise ValueError("gradient_accumulation_steps must be positive")
     args.global_batch_size = args.batch_size
     args.global_batch_size_val = args.batch_size_val
+    args.effective_global_batch_size = (
+        args.global_batch_size * args.gradient_accumulation_steps
+    )
     args.batch_size = int(args.batch_size / args.world_size)
     args.batch_size_val = int(args.batch_size_val / args.world_size)
     args.workers = int(
         (args.workers + args.world_size - 1) / args.world_size)
+
+    if args.rank == 0:
+        logger.info(
+            "Batch profile: per-device micro={}, global micro={}, "
+            "accumulation={}, effective global={}",
+            args.batch_size,
+            args.global_batch_size,
+            args.gradient_accumulation_steps,
+            args.effective_global_batch_size,
+        )
 
 
     train_split = str(getattr(args, "train_split", "train"))

@@ -34,8 +34,13 @@ class GraspToolSupportTest(unittest.TestCase):
                 self.assertEqual(cfg["TRAIN"]["epochs"], 36)
                 self.assertEqual(cfg["TRAIN"]["milestones"], [30])
                 self.assertEqual(cfg["TRAIN"]["base_lr"], 0.0001)
-                self.assertEqual(cfg["TRAIN"]["batch_size"], 32)
-                self.assertEqual(cfg["TRAIN"]["batch_size_val"], 32)
+                accumulation = cfg["TRAIN"].get(
+                    "gradient_accumulation_steps", 1
+                )
+                self.assertEqual(
+                    cfg["TRAIN"]["batch_size"] * accumulation, 32
+                )
+                self.assertGreater(cfg["TRAIN"]["batch_size_val"], 0)
                 self.assertEqual(cfg["TRAIN"]["word_len"], 32)
                 self.assertEqual(cfg["TEST"]["test_split"], "test")
                 self.assertEqual(
@@ -86,6 +91,25 @@ class GraspToolSupportTest(unittest.TestCase):
         )
         self.assertIn('DATASET_NAME="Grasp-Tools"', launcher)
         self.assertIn("datasets/grasp-tools/aug_graspall_v2", launcher)
+
+    def test_drogoff_uses_memory_safe_effective_batch(self):
+        cfg = yaml.safe_load(
+            (ROOT / "config" / "grasp_tools" / "drogoff.yaml").read_text(
+                encoding="utf-8"
+            )
+        )
+        train = cfg["TRAIN"]
+        self.assertTrue(train["amp"])
+        self.assertEqual(train["batch_size"], 16)
+        self.assertEqual(train["gradient_accumulation_steps"], 2)
+        self.assertEqual(
+            train["batch_size"] * train["gradient_accumulation_steps"], 32
+        )
+        engine = (ROOT / "engine" / "crog_engine.py").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("loss / window_size", engine)
+        self.assertIn("if should_step:", engine)
 
 
 if __name__ == "__main__":
