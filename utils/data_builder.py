@@ -1,6 +1,7 @@
 """Dataset selection shared by CROG-NPU training and evaluation."""
 
 from .dataset import OCIDVLGDataset
+from .grasp_tool_dataset import GraspToolDataset
 from .vcot_dataset import VCoTDataset
 
 
@@ -9,7 +10,7 @@ def normalize_dataset_name(name):
 
 
 def build_referring_grasp_dataset(args, split, with_grasp_offset=False):
-    """Build one OCID-VLG or VCoT dataset with the common batch contract."""
+    """Build a supported referring-grasp dataset with the common batch contract."""
     dataset_name = normalize_dataset_name(getattr(args, "dataset", "OCID-VLG"))
     common = {
         "root_dir": args.root_path,
@@ -29,6 +30,19 @@ def build_referring_grasp_dataset(args, split, with_grasp_offset=False):
             offset_sigma=getattr(args, "offset_sigma", None),
             grasp_size_factor=float(getattr(args, "grasp_size_factor", 100.0)),
         )
+    if dataset_name in {"grasptool", "grasp-tool", "grasp-tools"}:
+        return GraspToolDataset(
+            **common,
+            with_offset=with_grasp_offset,
+            offset_radius=float(getattr(args, "offset_r", 20.0)),
+            offset_sigma=getattr(args, "offset_sigma", None),
+            dynamic_train_prompts=bool(
+                getattr(args, "dynamic_train_prompts", False)
+            ),
+            dynamic_prompt_seed=int(
+                getattr(args, "dynamic_prompt_seed", 2025)
+            ),
+        )
     if dataset_name in {"ocid-vlg", "ocidvlg"}:
         if split not in {"train", "val", "test"}:
             raise ValueError(
@@ -44,5 +58,5 @@ def build_referring_grasp_dataset(args, split, with_grasp_offset=False):
         )
     raise ValueError(
         f"Unsupported DATA.dataset {getattr(args, 'dataset', None)!r}; "
-        "choose OCID-VLG or vcot."
+        "choose OCID-VLG, vcot, or GraspTool."
     )
