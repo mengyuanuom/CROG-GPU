@@ -247,21 +247,21 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Build a multi-object, multi-query Grasp-Tools dataset."
     )
-    parser.add_argument("--src-dir", default="datasets/grasp-tools/source/graspall")
-    parser.add_argument("--background-dir", default="datasets/grasp-tools/source/backgrounds")
+    parser.add_argument("--src-dir", default="assets/grasp_tools/graspall")
+    parser.add_argument("--background-dir", default="assets/grasp_tools/backgrounds")
     parser.add_argument("--out-dir", default="datasets/grasp-tools/aug_graspall_v2")
     parser.add_argument("--train-scenes", type=int, default=6000)
-    parser.add_argument("--val-scenes", type=int, default=800)
-    parser.add_argument("--test-scenes", type=int, default=1200)
-    parser.add_argument("--objects-min", type=int, default=3)
-    parser.add_argument("--objects-max", type=int, default=5)
-    parser.add_argument("--train-queries-per-scene", type=int, default=6)
+    parser.add_argument("--val-scenes", type=int, default=500)
+    parser.add_argument("--test-scenes", type=int, default=1000)
+    parser.add_argument("--objects-min", type=int, default=2)
+    parser.add_argument("--objects-max", type=int, default=3)
+    parser.add_argument("--train-queries-per-scene", type=int, default=4)
     parser.add_argument("--eval-queries-per-scene", type=int, default=4)
     parser.add_argument(
         "--max-query-difficulty",
         type=int,
         choices=(1, 2, 3, 4),
-        default=4,
+        default=1,
         help=(
             "Keep queries up to this difficulty: 1=category, "
             "2=category and absolute location, 3=single-reference relations, "
@@ -271,7 +271,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--language-templates",
         choices=("heldout", "shared"),
-        default="heldout",
+        default="shared",
         help=(
             "Use held-out wording for validation/test, or share the training "
             "wording across all splits."
@@ -298,8 +298,8 @@ def parse_args() -> argparse.Namespace:
             "24 gives 15-degree bins with continuous +/-7.5-degree jitter."
         ),
     )
-    parser.add_argument("--same-category-probability", type=float, default=0.35)
-    parser.add_argument("--hard-negative-probability", type=float, default=0.30)
+    parser.add_argument("--same-category-probability", type=float, default=0.0)
+    parser.add_argument("--hard-negative-probability", type=float, default=0.0)
     parser.add_argument("--placement-attempts", type=int, default=200)
     parser.add_argument("--scene-attempts", type=int, default=30)
     parser.add_argument("--border-margin", type=int, default=4)
@@ -1286,6 +1286,10 @@ class LanguageScheduler:
         if category_term is not None:
             query["category_term"] = category_term
             query["description_variant_id"] = int(term_index)
+        if candidate["type"] == "category":
+            # The loader uses this marker to replace the stored wording with
+            # a reproducible, non-repeating 88-prompt curriculum per epoch.
+            query["prompt_cycle"] = "category_v1"
         self.total_queries += 1
         return query
 

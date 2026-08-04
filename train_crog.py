@@ -556,8 +556,12 @@ def main_worker(local_rank, args):
     for epoch in range(args.start_epoch, args.epochs):
         epoch_log = epoch + 1
 
-        # shuffle loader
+        # Change both the distributed order and the deterministic Grasp-Tools
+        # language curriculum. DataLoader workers are recreated for each epoch
+        # and inherit this value before fetching their first sample.
         train_sampler.set_epoch(epoch_log)
+        if hasattr(train_loader.dataset, "set_epoch"):
+            train_loader.dataset.set_epoch(epoch_log)
 
         # train
         train_with_grasp(train_loader, model, optimizer, scheduler, scaler, epoch_log,  args)

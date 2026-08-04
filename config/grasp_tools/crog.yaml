@@ -5,7 +5,8 @@ DATA:
   val_split: val
   offset_r: 20
   offset_sigma:
-  dynamic_train_prompts: False
+  dynamic_train_prompts: True
+  dynamic_prompt_seed: 2025
 MODEL:
   architecture: crog
 TRAIN:

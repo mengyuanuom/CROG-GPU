@@ -235,7 +235,10 @@ class GraspToolDataset(Dataset):
                 self.dynamic_train_prompts
                 and self.split == "train"
                 and query_type == "category"
-                and query.get("prompt_cycle") == "category_v1"
+                # Schema-v2.1 files generated before prompt_cycle was added
+                # are safe to rotate too: type=category is emitted only for a
+                # unique-category target. Keep rejecting unknown future cycles.
+                and query.get("prompt_cycle", "category_v1") == "category_v1"
             ):
                 sample_key = (
                     f"{data.get('scene_id', os.path.basename(json_path))}:"

@@ -17,6 +17,20 @@ MODELS = {
 
 
 class GraspToolSupportTest(unittest.TestCase):
+    def test_embedded_source_assets_are_complete(self):
+        assets = ROOT / "assets" / "grasp_tools"
+        graspall = assets / "graspall"
+        backgrounds = assets / "backgrounds"
+        images = sorted(graspall.glob("*.jpg"))
+        annotations = sorted(graspall.glob("*.json"))
+        self.assertEqual(len(images), 107)
+        self.assertEqual(len(annotations), 107)
+        self.assertEqual(
+            {path.stem for path in images},
+            {path.stem for path in annotations},
+        )
+        self.assertEqual(len(list(backgrounds.glob("*.jpg"))), 42)
+
     def test_all_requested_profiles_share_dataset_and_schedule(self):
         config_dir = ROOT / "config" / "grasp_tools"
         self.assertEqual({path.stem for path in config_dir.glob("*.yaml")}, MODELS)
@@ -26,6 +40,8 @@ class GraspToolSupportTest(unittest.TestCase):
                     (config_dir / f"{model_name}.yaml").read_text(encoding="utf-8")
                 )
                 self.assertEqual(cfg["DATA"]["dataset"], "GraspTool")
+                self.assertTrue(cfg["DATA"]["dynamic_train_prompts"])
+                self.assertEqual(cfg["DATA"]["dynamic_prompt_seed"], 2025)
                 self.assertEqual(
                     cfg["DATA"]["root_path"],
                     "./datasets/grasp-tools/aug_graspall_v2",
@@ -66,10 +82,23 @@ class GraspToolSupportTest(unittest.TestCase):
         self.assertIn("return GraspToolDataset(", builder)
         self.assertIn('index_path = os.path.join(split_dir, "index.jsonl")', adapter)
         self.assertIn('query = queries[query_index]', adapter)
+        self.assertIn(
+            'query.get("prompt_cycle", "category_v1") == "category_v1"',
+            adapter,
+        )
         self.assertIn("include_short=self.with_short_side", adapter)
         self.assertIn('if self.with_short_side:', adapter)
         self.assertIn('getattr(args, "predict_grasp_short_side", False)', builder)
         self.assertIn('grasp_masks["off"]', adapter)
+
+    def test_runner_propagates_epoch_to_dynamic_language_dataset(self):
+        runner = (ROOT / "train_crog.py").read_text(encoding="utf-8")
+        self.assertIn(
+            'hasattr(train_loader.dataset, "set_epoch")', runner
+        )
+        self.assertIn(
+            "train_loader.dataset.set_epoch(epoch_log)", runner
+        )
 
     def test_auto_activation_matches_every_model_loss(self):
         clamp_models = (

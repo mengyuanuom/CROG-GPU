@@ -7,10 +7,10 @@ those queries through index.jsonl.
 
 ## Source layout
 
-Put or link the source files under:
+Put or link the source files under the repository's asset directory:
 
 ~~~text
-datasets/grasp-tools/source/
+assets/grasp_tools/
 ├── graspall/
 │   ├── 000000000001.jpg
 │   ├── 000000000001.json
@@ -33,14 +33,18 @@ From the CROG-GPU root:
 python tools/dataset_converters/grasp_tools/augment.py --overwrite
 ~~~
 
+The default inputs are `assets/grasp_tools/graspall` and
+`assets/grasp_tools/backgrounds`; the generated dataset is written to
+`datasets/grasp-tools/aug_graspall_v2`.
+
 The defaults produce:
 
 | Split | Images | Objects/image | Queries/image | Approx. query samples |
 |---|---:|---:|---:|---:|
-| train | 6000 | 3–5 (average 4) | 6 | 36000 |
-| val | 800 | 3–5 (average 4) | 4 | 3200 |
-| test | 1200 | 3–5 (average 4) | 4 | 4800 |
-| total | 8000 | average 4 | — | 44000 |
+| train | 6000 | 2–3 | 4 | 24000 |
+| val | 500 | 2–3 | 4 | 2000 |
+| test | 1000 | 2–3 | 4 | 4000 |
+| total | 7500 | 2–3 | — | 30000 |
 
 Use a quick integration run before full generation:
 
@@ -58,8 +62,7 @@ The complete plan for each split is created before rendering. Consequently:
   maximum count difference of one;
 - scene generation is atomic, so a failed placement retries the whole scene and
   cannot silently alter the planned counts;
-- object counts 3, 4, and 5 are used nearly equally, with average 4 for the
-  recommended split sizes.
+- object counts 2 and 3 are used equally for the default difficulty-1 split.
 
 The generator aborts if any guarantee is violated. Exact counts and deltas are
 written to metadata.json.
@@ -68,11 +71,12 @@ written to metadata.json.
 
 Each category has four safe surface forms: its canonical name plus aliases or
 near-synonyms. Training has 22 command templates, giving 88 category-only
-command/term combinations per category. The generator balances template and
-term usage, and reserves four disjoint command templates for validation/test
-when language-templates is heldout (the default). About one quarter of queries
-use valid spatial or relational descriptions when the scene supports them; the
-rest explicitly exercise the balanced category vocabulary.
+command/term combinations per category. The default difficulty-1 data uses
+unique-category targets and shares the same language pool across train, val,
+and test. During training, `dynamic_train_prompts: True` selects a reproducibly
+shuffled, non-repeating expression for every sample and epoch. Validation and
+test keep their generated text fixed. Existing schema-v2.1 JSON files without
+the `prompt_cycle` marker remain compatible.
 
 The canonical category is always stored separately in each query, so changing
 wording does not change the target label.
