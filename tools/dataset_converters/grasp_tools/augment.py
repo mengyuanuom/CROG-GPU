@@ -318,14 +318,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--smoke-test",
         action="store_true",
-        help="Generate 12 scenes in each split for a stable end-to-end check.",
+        help="Generate 22 scenes in each split for a stable end-to-end check.",
     )
     return parser.parse_args()
 
 
 def build_config(args: argparse.Namespace) -> GeneratorConfig:
     if args.smoke_test:
-        args.train_scenes, args.val_scenes, args.test_scenes = 12, 12, 12
+        # One scene per canonical class keeps the strict 22-class query-target
+        # planner feasible under the default 2-3-object difficulty-1 profile.
+        args.train_scenes, args.val_scenes, args.test_scenes = 22, 22, 22
         args.preview_count = min(args.preview_count, 18)
 
     if args.objects_min < 2 or args.objects_max < args.objects_min:
@@ -1474,6 +1476,13 @@ def validate_annotation(annotation: Dict[str, Any], width: int, height: int) -> 
             raise ValueError("Query has empty text")
 
 
+def placement_scale_backoff(scene_attempt: int) -> float:
+    """Shrink difficult scenes progressively without changing their quotas."""
+    if scene_attempt < 0:
+        raise ValueError("scene_attempt must be non-negative")
+    return max(0.55, 0.90 ** scene_attempt)
+
+
 def build_scene(
     split: str,
     scene_number: int,
@@ -1496,29 +1505,49 @@ def build_scene(
         if canvas is None:
             raise FileNotFoundError(f"Cannot read background: {background_path}")
         occupancy = np.zeros(canvas.shape[:2], dtype=bool)
-        placed_objects: List[Dict[str, Any]] = []
-
         for source in planned_sources:
+            if source.source_id not in prepared_cache:
+                prepared_cache[source.source_id] = prepare_source_object(source)
+        placement_order = sorted(
+            range(len(planned_sources)),
+            key=lambda index: (
+                prepared_cache[planned_sources[index].source_id].rgba.shape[0]
+                * prepared_cache[planned_sources[index].source_id].rgba.shape[1]
+            ),
+            reverse=True,
+        )
+        placed_by_original_index: Dict[int, Dict[str, Any]] = {}
+        scale_backoff = placement_scale_backoff(scene_attempt)
+
+        for original_index in placement_order:
+            source = planned_sources[original_index]
             placed: Optional[Dict[str, Any]] = None
             for _ in range(12):
                 scale, angle = transform_sampler.next(source)
-                if source.source_id not in prepared_cache:
-                    prepared_cache[source.source_id] = prepare_source_object(source)
                 transformed = transform_object(
-                    prepared_cache[source.source_id], scale, angle, rng, config
+                    prepared_cache[source.source_id],
+                    scale * scale_backoff,
+                    angle,
+                    rng,
+                    config,
                 )
                 placed = paste_object(canvas, occupancy, transformed, rng, config)
                 if placed is not None:
-                    placed["object_id"] = len(placed_objects)
-                    placed_objects.append(placed)
+                    placed_by_original_index[original_index] = placed
                     break
             if placed is None:
                 break
 
         # A planned scene is atomic: never keep a partial scene because doing so
         # would silently destroy the category/source balance guarantees.
-        if len(placed_objects) != len(planned_sources):
+        if len(placed_by_original_index) != len(planned_sources):
             continue
+        placed_objects = [
+            placed_by_original_index[index]
+            for index in range(len(planned_sources))
+        ]
+        for object_id, placed in enumerate(placed_objects):
+            placed["object_id"] = object_id
 
         height, width = canvas.shape[:2]
         candidates = logical_candidates(

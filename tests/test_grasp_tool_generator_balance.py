@@ -12,6 +12,7 @@ from tools.dataset_converters.grasp_tools.augment import (
     balanced_scene_sizes,
     build_config,
     parse_args,
+    placement_scale_backoff,
     plan_query_targets,
     plan_split_scenes,
 )
@@ -58,6 +59,14 @@ def test_default_cli_is_balanced_difficulty_one(monkeypatch):
     assert config.same_category_probability == 0.0
     assert config.hard_negative_probability == 0.0
 
+    monkeypatch.setattr(sys, "argv", ["augment.py", "--smoke-test"])
+    smoke_config = build_config(parse_args())
+    assert (
+        smoke_config.train_scenes,
+        smoke_config.val_scenes,
+        smoke_config.test_scenes,
+    ) == (22, 22, 22)
+
 
 def test_category_query_marks_dynamic_prompt_cycle():
     objects = [
@@ -76,6 +85,14 @@ def test_category_query_marks_dynamic_prompt_cycle():
     )
     assert query["type"] == "category"
     assert query["prompt_cycle"] == "category_v1"
+
+
+def test_placement_scale_backoff_is_bounded_and_monotonic():
+    values = [placement_scale_backoff(attempt) for attempt in range(30)]
+    assert values[0] == 1.0
+    assert all(current >= following for current, following in zip(values, values[1:]))
+    assert min(values) == 0.55
+    assert placement_scale_backoff(100) == 0.55
 
 
 def test_balanced_integer_quotas_and_scene_sizes():
