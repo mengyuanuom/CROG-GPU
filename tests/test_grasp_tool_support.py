@@ -53,7 +53,7 @@ class GraspToolSupportTest(unittest.TestCase):
                 accumulation = cfg["TRAIN"].get(
                     "gradient_accumulation_steps", 1
                 )
-                expected_global_batch = 24 if model_name == "drogoff" else 32
+                expected_global_batch = 16 if model_name == "drogoff" else 32
                 self.assertEqual(
                     cfg["TRAIN"]["batch_size"] * accumulation,
                     expected_global_batch,
@@ -125,7 +125,7 @@ class GraspToolSupportTest(unittest.TestCase):
         self.assertIn('DATASET_NAME="Grasp-Tools"', launcher)
         self.assertIn("datasets/grasp-tools/aug_graspall_v2", launcher)
 
-    def test_drogoff_uses_amp_and_global_train_batch_24(self):
+    def test_drogoff_uses_amp_and_global_train_batch_16(self):
         cfg = yaml.safe_load(
             (ROOT / "config" / "grasp_tools" / "drogoff.yaml").read_text(
                 encoding="utf-8"
@@ -134,7 +134,7 @@ class GraspToolSupportTest(unittest.TestCase):
         train = cfg["TRAIN"]
         self.assertTrue(train["amp"])
         self.assertFalse(train["find_unused_parameters"])
-        self.assertEqual(train["batch_size"], 24)
+        self.assertEqual(train["batch_size"], 16)
         self.assertEqual(train["batch_size_val"], 32)
         self.assertNotIn("gradient_accumulation_steps", train)
         runner = (ROOT / "train_crog.py").read_text(encoding="utf-8")

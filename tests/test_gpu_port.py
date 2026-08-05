@@ -81,7 +81,7 @@ class OfficialCROGGPUConfigTest(unittest.TestCase):
             expected_epochs = 36 if is_long_run else 24
             expected_milestone = 30 if is_long_run else 20
             expected_batch_size = (
-                24 if relative_config == "grasp_tools/drogoff.yaml" else 32
+                16 if relative_config == "grasp_tools/drogoff.yaml" else 32
             )
             with self.subTest(config=relative_config):
                 self.assertRegex(
