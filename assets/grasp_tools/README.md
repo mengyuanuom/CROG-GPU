@@ -1,6 +1,6 @@
 # Embedded Grasp-Tools source assets
 
-This directory contains the complete source material required by CROG-NPU's
+This directory contains the complete source material required by CROG-GPU's
 compositional Grasp-Tools augmentation pipeline:
 
 - `graspall/`: 107 RGB images and their 107 polygon/grasp JSON annotations;

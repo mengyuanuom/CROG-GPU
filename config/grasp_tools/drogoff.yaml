@@ -32,7 +32,6 @@ TRAIN:
   fpn_in: [768, 768, 768]
   fpn_out: [256, 512, 1024]
   sync_bn: True
-  # path (128-vs-32 shape mismatch). Keep this model in stable FP32 mode.
   amp: True
   find_unused_parameters: False
   optimizer: adam

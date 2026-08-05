@@ -116,7 +116,7 @@ class GraspToolSupportTest(unittest.TestCase):
         drogoff = (ROOT / "model" / "drogoff.py").read_text(encoding="utf-8")
         self.assertIn('grasp_size_loss_activation = "sigmoid"', drogoff)
 
-    def test_eight_npu_launcher_preserves_grasp_tool_root(self):
+    def test_gpu_launcher_preserves_grasp_tool_root(self):
         launcher = (ROOT / "tools" / "train_gpu.sh").read_text(
             encoding="utf-8"
         )
