@@ -81,7 +81,7 @@ class OfficialCROGGPUConfigTest(unittest.TestCase):
             expected_epochs = 36 if is_long_run else 24
             expected_milestone = 30 if is_long_run else 20
             expected_batch_size = (
-                16 if relative_config == "grasp_tools/drogoff.yaml" else 32
+                16 if relative_config == "OCID-VLG/drogoff.yaml" else 32
             )
             with self.subTest(config=relative_config):
                 self.assertRegex(
@@ -444,7 +444,11 @@ class OfficialCROGGPUConfigTest(unittest.TestCase):
                     source,
                     r"(?m)^\s*test_workers:\s*2\b",
                 )
-                self.assertRegex(source, r"(?m)^\s*batch_size:\s*32\b")
+                expected_batch_size = 16 if name == "drogoff.yaml" else 32
+                self.assertRegex(
+                    source,
+                    rf"(?m)^\s*batch_size:\s*{expected_batch_size}\b",
+                )
                 self.assertRegex(source, r"(?m)^\s*batch_size_val:\s*32\b")
 
     def test_evaluation_keeps_ground_truth_on_the_input_canvas(self):
@@ -467,7 +471,7 @@ class OfficialCROGGPUConfigTest(unittest.TestCase):
     def test_drog_configs_match_the_requested_global_schedule(self):
         expected_optimization = {
             "drog.yaml": ("drog", 32, 32, "0.0001", 30),
-            "drogoff.yaml": ("drogoff", 32, 32, "0.0001", 30),
+            "drogoff.yaml": ("drogoff", 16, 32, "0.0001", 30),
         }
         for name, (
             architecture,

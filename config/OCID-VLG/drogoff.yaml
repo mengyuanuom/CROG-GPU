@@ -46,12 +46,12 @@ TRAIN:
 
   # Training Setting
   # Conservative per-process profile for two accelerators.
-  workers: 4  # per process; 32 workers total with eight GPUs
+  workers: 4  # per process; 8 workers total with two GPUs
   workers_val: 2
   epochs: 36
   milestones: [30]
   start_epoch: 0
-  batch_size: 32  # global train batch size; 4 samples per process on 8 GPUs
+  batch_size: 16  # global train batch size; 8 samples per process on 2 GPUs
   batch_size_val: 32  # global validation batch size
   base_lr: 0.0001
   lr_decay: 0.1
