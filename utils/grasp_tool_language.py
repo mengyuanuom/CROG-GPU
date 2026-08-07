@@ -81,24 +81,10 @@ COMMAND_TEMPLATES = {
         "Grasp {description}.",
         "Please pick up {description}.",
         "Grab {description}, please.",
-        "I would like you to grasp {description}.",
-        "Please select {description}.",
-        "Pick {description} up.",
         "Please grasp {description}.",
         "Please grab {description}.",
         "Select {description}.",
-        "Choose {description}.",
         "Lift {description}.",
-        "Take hold of {description}.",
-        "Reach for and grasp {description}.",
-        "Find and grasp {description}.",
-        "Find and pick up {description}.",
-        "Locate and grasp {description}.",
-        "Retrieve {description}.",
-        "Take {description}.",
-        "Get {description}.",
-        "Could you pick up {description}?",
-        "Can you grasp {description}?",
     ),
     "eval": (
         "Identify and lift {description}.",
@@ -129,7 +115,7 @@ def canonical_category_key(value):
 
 
 def category_prompt_pool(category):
-    """Return all 88 command/term combinations for one canonical category."""
+    """Return all 32 command/term combinations for one canonical category."""
     key = canonical_category_key(category)
     return tuple(
         template.format(description=f"the {term}")
@@ -147,7 +133,7 @@ def _prompt_permutation(sample_key, cycle, pool_size, seed):
 
 
 def category_prompt_for_epoch(category, sample_key, epoch, seed=2025):
-    """Pick from a reproducibly shuffled, non-repeating 88-prompt cycle."""
+    """Pick from a reproducibly shuffled, non-repeating 32-prompt cycle."""
     pool = category_prompt_pool(category)
     epoch_index = max(0, int(epoch) - 1)
     cycle, position = divmod(epoch_index, len(pool))

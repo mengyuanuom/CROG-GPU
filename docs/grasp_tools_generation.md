@@ -41,10 +41,10 @@ The defaults produce:
 
 | Split | Images | Objects/image | Queries/image | Approx. query samples |
 |---|---:|---:|---:|---:|
-| train | 6000 | 2–3 | 4 | 24000 |
-| val | 500 | 2–3 | 4 | 2000 |
-| test | 1000 | 2–3 | 4 | 4000 |
-| total | 7500 | 2–3 | — | 30000 |
+| train | 12000 | 2–3 | 4 | 48000 |
+| val | 1000 | 2–3 | 4 | 4000 |
+| test | 2000 | 2–3 | 4 | 8000 |
+| total | 15000 | 2–3 | — | 60000 |
 
 Use a quick integration run before full generation:
 
@@ -70,7 +70,7 @@ written to metadata.json.
 ## Language diversity
 
 Each category has four safe surface forms: its canonical name plus aliases or
-near-synonyms. Training has 22 command templates, giving 88 category-only
+near-synonyms. Training has 8 common command templates, giving 32 category-only
 command/term combinations per category. The default difficulty-1 data uses
 unique-category targets and shares the same language pool across train, val,
 and test. During training, `dynamic_train_prompts: True` selects a reproducibly

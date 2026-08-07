@@ -250,9 +250,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--src-dir", default="assets/grasp_tools/graspall")
     parser.add_argument("--background-dir", default="assets/grasp_tools/backgrounds")
     parser.add_argument("--out-dir", default="datasets/grasp-tools/aug_graspall_v2")
-    parser.add_argument("--train-scenes", type=int, default=6000)
-    parser.add_argument("--val-scenes", type=int, default=500)
-    parser.add_argument("--test-scenes", type=int, default=1000)
+    parser.add_argument("--train-scenes", type=int, default=12000)
+    parser.add_argument("--val-scenes", type=int, default=1000)
+    parser.add_argument("--test-scenes", type=int, default=2000)
     parser.add_argument("--objects-min", type=int, default=2)
     parser.add_argument("--objects-max", type=int, default=3)
     parser.add_argument("--train-queries-per-scene", type=int, default=4)
@@ -1290,7 +1290,7 @@ class LanguageScheduler:
             query["description_variant_id"] = int(term_index)
         if candidate["type"] == "category":
             # The loader uses this marker to replace the stored wording with
-            # a reproducible, non-repeating 88-prompt curriculum per epoch.
+            # a reproducible, non-repeating 32-prompt curriculum per epoch.
             query["prompt_cycle"] = "category_v1"
         self.total_queries += 1
         return query

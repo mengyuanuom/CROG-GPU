@@ -49,7 +49,7 @@ def test_default_cli_is_balanced_difficulty_one(monkeypatch):
     assert config.background_dir == "assets/grasp_tools/backgrounds"
     assert config.out_dir == "datasets/grasp-tools/aug_graspall_v2"
     assert (config.train_scenes, config.val_scenes, config.test_scenes) == (
-        6000, 500, 1000
+        12000, 1000, 2000
     )
     assert (config.objects_min, config.objects_max) == (2, 3)
     assert config.train_queries_per_scene == 4
