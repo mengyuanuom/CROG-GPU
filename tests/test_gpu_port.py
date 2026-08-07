@@ -80,8 +80,12 @@ class OfficialCROGGPUConfigTest(unittest.TestCase):
             )
             expected_epochs = 36 if is_long_run else 24
             expected_milestone = 30 if is_long_run else 20
+            batch_24_profiles = {
+                "OCID-VLG/drogoff.yaml",
+                "grasp_tools/drogoff.yaml",
+            }
             expected_batch_size = (
-                24 if relative_config == "OCID-VLG/drogoff.yaml" else 32
+                24 if relative_config in batch_24_profiles else 32
             )
             with self.subTest(config=relative_config):
                 self.assertRegex(
