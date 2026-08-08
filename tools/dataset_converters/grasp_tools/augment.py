@@ -202,6 +202,7 @@ class GeneratorConfig:
     src_dir: str
     background_dir: str
     out_dir: str
+    background_policy: str
     train_scenes: int
     val_scenes: int
     test_scenes: int
@@ -250,6 +251,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--src-dir", default="assets/grasp_tools/graspall")
     parser.add_argument("--background-dir", default="assets/grasp_tools/backgrounds")
     parser.add_argument("--out-dir", default="datasets/grasp-tools/aug_graspall_v2")
+    parser.add_argument(
+        "--background-policy",
+        choices=("shared", "disjoint"),
+        default="shared",
+        help=(
+            "Let train/val/test sample from the same complete background pool "
+            "(shared), or reserve disjoint background files for each split "
+            "(disjoint)."
+        ),
+    )
     parser.add_argument("--train-scenes", type=int, default=12000)
     parser.add_argument("--val-scenes", type=int, default=1000)
     parser.add_argument("--test-scenes", type=int, default=2000)
@@ -340,6 +351,8 @@ def build_config(args: argparse.Namespace) -> GeneratorConfig:
         raise ValueError("language-templates must be 'heldout' or 'shared'")
     if args.category_vocabulary not in {"canonical", "expanded"}:
         raise ValueError("category-vocabulary must be 'canonical' or 'expanded'")
+    if args.background_policy not in {"shared", "disjoint"}:
+        raise ValueError("background-policy must be 'shared' or 'disjoint'")
     if args.angle_bins < 1:
         raise ValueError("angle-bins must be positive")
     for name in ("same_category_probability", "hard_negative_probability"):
@@ -353,6 +366,7 @@ def build_config(args: argparse.Namespace) -> GeneratorConfig:
         src_dir=args.src_dir,
         background_dir=args.background_dir,
         out_dir=args.out_dir,
+        background_policy=args.background_policy,
         train_scenes=args.train_scenes,
         val_scenes=args.val_scenes,
         test_scenes=args.test_scenes,
@@ -1610,7 +1624,10 @@ Generation contract:
   - reuse counts of source instances from the same class differ by at most one.
   - category terms cycle through canonical names, aliases, and near-synonyms.
   - command templates are balanced; heldout mode separates train/eval wording.
-  - train/val/test use disjoint background image files.
+  - background policy is {config.background_policy}.
+  - shared policy lets train/val/test sample every background image; scene files
+    remain split-exclusive and use deterministic independent random streams.
+  - disjoint policy reserves different background image files for each split.
   - source cutouts are shared across splits (a compositional split).
   - grasp rectangle height is fixed at {config.grasp_height:g} pixels.
 
@@ -1679,7 +1696,14 @@ def generate_dataset(config: GeneratorConfig) -> Path:
         raise ValueError(f"Missing canonical categories: {missing_categories}")
 
     background_paths = list_images(background_dir)
-    background_splits = split_backgrounds(background_paths, config.seed)
+    if not background_paths:
+        raise ValueError(f"No background images found in: {background_dir}")
+    if config.background_policy == "shared":
+        background_splits = {
+            split: list(background_paths) for split in ("train", "val", "test")
+        }
+    else:
+        background_splits = split_backgrounds(background_paths, config.seed)
     out_dir = prepare_output_directory(config, src_dir, background_dir)
     write_readme(out_dir, config)
 
@@ -1688,6 +1712,7 @@ def generate_dataset(config: GeneratorConfig) -> Path:
     print(f"[source] backgrounds: {len(background_paths)}")
     for warning in source_warnings:
         print(f"[source-warning] {warning}")
+    print(f"[backgrounds] policy: {config.background_policy}")
     for split, values in background_splits.items():
         print(f"[backgrounds] {split}: {len(values)}")
 
